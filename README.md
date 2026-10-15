@@ -22,6 +22,17 @@
 - **Badges**: Hat-trick, Playmaker, The wall, Bucket getter, Elite night, Back to back, Heater, Skipper, Regular, Trusted whistle.
 - **Match card**: one tap turns a result into a 1080×1350 image for stories or the group chat.
 
+## Membership
+
+After a 7-day free trial, Ball Up Top needs a membership: **$2/week, $5/month, $30/year, or $50 once (lifetime)**.
+Payments run through RevenueCat: Apple in-app purchase in the iPhone app, Stripe on the website, one membership for both.
+Put the RevenueCat public keys in `config.js` to switch the paywall on. Without them the app is free to use.
+
+## iPhone app
+
+The iPhone app wraps this same site with Capacitor. `.github/workflows/ios.yml` builds it on GitHub's Macs:
+without App Store secrets it runs a test build; with them it signs and uploads to TestFlight. See the comments at the top of that file for the four secrets.
+
 ## Run it
 
 It's a static site with no build step. Serve the folder with any static server:

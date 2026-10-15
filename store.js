@@ -82,6 +82,18 @@ class LocalStore {
   }
   get supportsSocialLogin() { return false; }
   async signInWithGoogle() { throw new Error("Google sign-in turns on once the shared league database is connected (see README)."); }
+  async signInWithApple() { throw new Error("Sign in with Apple turns on once the shared league database is connected (see README)."); }
+  async deleteAccount(id) {
+    this.db.users = this.db.users.filter((u) => u.id !== id);
+    this.db.friends = this.db.friends.filter((f) => f.from !== id && f.to !== id);
+    this.db.ratings = this.db.ratings.filter((r) => r.raterId !== id && r.target !== id);
+    this.db.comments = this.db.comments.filter((c) => c.userId !== id);
+    this.db.rsvps = this.db.rsvps.filter((r) => r.userId !== id);
+    this.db.playerStats = this.db.playerStats.filter((r) => r.userId !== id);
+    this.db.games = this.db.games.filter((g) => g.createdBy !== id);
+    this.#save();
+    await this.signOut();
+  }
   async sendPhoneCode() { throw new Error("Phone sign-in turns on once the shared league database is connected (see README)."); }
   async verifyPhoneCode() { throw new Error("Phone sign-in isn't available in demo mode."); }
   async completeSetup() {}
@@ -254,14 +266,60 @@ class SupabaseStore {
   }
   async init() {
     const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    this.sb = createClient(this.url, this.key, { auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true } });
-    // Finish a Google redirect (?code=...) before the app reads the session, then tidy the URL.
+    this.native = !!window.Capacitor?.isNativePlatform?.();
+    this.sb = createClient(this.url, this.key, { auth: { flowType: "pkce", detectSessionInUrl: !this.native, persistSession: true } });
+    // Finish a Google/Apple redirect (?code=...) before the app reads the session, then tidy the URL.
     await this.sb.auth.getSession();
     if (new URLSearchParams(location.search).has("code")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
+    if (this.native) {
+      // In the iPhone app, OAuth runs in the system browser and comes back through the app's URL scheme.
+      const App = window.Capacitor.registerPlugin("App");
+      App.addListener("appUrlOpen", async ({ url }) => {
+        if (!url?.startsWith(NATIVE_REDIRECT)) return;
+        const code = new URL(url.replace(/#/, "?")).searchParams.get("code");
+        try { window.Capacitor.registerPlugin("Browser").close(); } catch (_) {}
+        if (code) {
+          const { error } = await this.sb.auth.exchangeCodeForSession(code);
+          window.dispatchEvent(new CustomEvent("but:auth", { detail: { error: error?.message } }));
+        }
+      });
+    }
   }
   get supportsSocialLogin() { return true; }
-  async signInWithGoogle() {
-    this.#ok(await this.sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } }));
+  async #oauth(provider) {
+    if (this.native) {
+      const { data, error } = await this.sb.auth.signInWithOAuth({ provider, options: { redirectTo: NATIVE_REDIRECT, skipBrowserRedirect: true } });
+      if (error) throw new Error(error.message);
+      await window.Capacitor.registerPlugin("Browser").open({ url: data.url, presentationStyle: "popover" });
+      return;
+    }
+    this.#ok(await this.sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } }));
+  }
+  async signInWithGoogle() { return this.#oauth("google"); }
+  async signInWithApple() {
+    if (this.native) {
+      // Native Sign in with Apple sheet, then hand the identity token to Supabase.
+      const raw = crypto.randomUUID() + crypto.randomUUID();
+      const hashed = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const Apple = window.Capacitor.registerPlugin("SignInWithApple");
+      const res = await Apple.authorize({ clientId: APP_BUNDLE_ID, redirectURI: this.url + "/auth/v1/callback", scopes: "email name", nonce: hashed });
+      const token = res?.response?.identityToken;
+      if (!token) throw new Error("Apple didn't return a sign-in token. Try again.");
+      this.#ok(await this.sb.auth.signInWithIdToken({ provider: "apple", token, nonce: raw }));
+      const given = [res.response.givenName, res.response.familyName].filter(Boolean).join(" ");
+      if (given) await this.sb.auth.updateUser({ data: { full_name: given } });
+      return;
+    }
+    return this.#oauth("apple");
+  }
+  async deleteAccount(id) {
+    // Remove profile pictures first (Storage API), then the account itself.
+    try {
+      const { data } = await this.sb.storage.from("avatars").list(id);
+      if (data?.length) await this.sb.storage.from("avatars").remove(data.map((f) => `${id}/${f.name}`));
+    } catch (_) {}
+    this.#ok(await this.sb.rpc("delete_my_account"));
+    await this.sb.auth.signOut();
   }
   async sendPhoneCode(phone) {
     this.#ok(await this.sb.auth.signInWithOtp({ phone: phone.trim() }));
@@ -459,6 +517,9 @@ SupabaseStore.prototype.removeFriend = async function (id) {
   const { error } = await this.sb.from("friendships").delete().eq("id", id);
   if (error) throw new Error(error.message);
 };
+
+const APP_BUNDLE_ID = "com.bizboxd.balluptop";
+const NATIVE_REDIRECT = APP_BUNDLE_ID + "://auth";
 
 export function createStore() {
   const cfg = window.BUT_CONFIG || {};

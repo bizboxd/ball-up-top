@@ -1,4 +1,5 @@
 import { createStore } from "./store.js";
+import { billing, PLANS, isNative } from "./billing.js";
 
 /* ============================================================
    Config
@@ -10,7 +11,7 @@ const IMG = {
   hero: HF + "20261015_173431_759a8ac0-f610-45c4-8555-31cc6fc31a69_min.webp",
   hoops: HF + "20261015_173432_2a832981-0591-4125-a706-b86134cb0bf5_min.webp",
   ball: HF + "20261015_173431_7b35b216-9afb-427a-b31d-56b90c38a39d_min.webp",
-  icon: HF + "20261015_173432_2a38faf6-2943-4a2b-9b99-c32811ef66f6_min.webp",
+  icon: "apple-touch-icon.png",
   motm: HF + "20261015_173432_93416046-b584-485e-88d2-197c2cda6b04_min.webp",
 };
 
@@ -64,7 +65,7 @@ function icon(name, cls = "") {
 const store = createStore();
 const state = {
   me: null, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [],
-  replyTo: null,
+  replyTo: null, plan: "$rc_monthly", plans: PLANS,
   feedFilter: "all", feedScope: "friends", leadersSport: "all", leadersSeason: null, squadTab: "friends",
   authTab: "login", phone: { number: "", sent: false },
 };
@@ -76,6 +77,9 @@ async function reload() {
   if (!me) {
     Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [] });
     return;
+  }
+  if (billing.enabled && !me.needsSetup) {
+    try { await billing.start(me.id); } catch (err) { console.warn("Billing unavailable", err); }
   }
   const [users, games, ratings, friendships, rsvps, comments, playerStats] = await Promise.all([
     store.listUsers(), store.listGames(), store.listRatings(), store.listFriendships(), store.listRsvps(), store.listComments(), store.listStats(),
@@ -637,6 +641,7 @@ function sparkline(values) {
    Auth
    ============================================================ */
 
+const APPLE_LOGO = `<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="currentColor"><path d="M16.37 12.7c-.02-2.2 1.8-3.26 1.88-3.31-1.03-1.5-2.62-1.7-3.18-1.73-1.35-.14-2.64.8-3.33.8-.69 0-1.74-.78-2.87-.76-1.47.02-2.83.86-3.59 2.18-1.53 2.66-.39 6.6 1.1 8.75.73 1.05 1.6 2.24 2.73 2.2 1.1-.05 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.07 2.65-2.13.84-1.22 1.18-2.4 1.2-2.46-.03-.01-2.27-.87-2.29-3.52zM14.2 6.22c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.54 1.31-.56.65-1.05 1.68-.92 2.67.97.08 1.96-.49 2.56-1.22z"/></svg>`;
 const GOOGLE_G = `<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
 
 function viewAuth() {
@@ -676,10 +681,11 @@ function viewAuth() {
       <div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Ball Up Top</span></div>
       <h1 class="auth-h">Every run, rated by the people who were there.</h1>
       <div class="social">
+        <button type="button" class="btn social-btn apple ${shared ? "" : "soon"}" id="apple-btn">${APPLE_LOGO} Continue with Apple</button>
         <button type="button" class="btn social-btn ${shared ? "" : "soon"}" id="google-btn">${GOOGLE_G} Continue with Google</button>
         <button type="button" class="btn social-btn ${shared ? "" : "soon"} ${phoneMode ? "on" : ""}" id="phone-btn">${icon("phone")} Continue with phone</button>
       </div>
-      ${shared ? "" : `<p class="muted small soon-note">Google and phone sign-in switch on once your league database is connected. In demo mode, use a username.</p>`}
+      ${shared ? "" : `<p class="muted small soon-note">Apple, Google and phone sign-in switch on once your league database is connected. In demo mode, use a username.</p>`}
       <div class="or"><span>or ${shared ? "use email" : "use a username"}</span></div>
       <div class="tabs">
         <button class="${login ? "on" : ""}" data-tab="login">Log in</button>
@@ -701,6 +707,10 @@ function bindAuth() {
   };
   // In shared mode this redirects to Google; in demo mode it explains why it's off.
   $("#google-btn").addEventListener("click", (e) => act(e.currentTarget, () => store.signInWithGoogle()));
+  $("#apple-btn").addEventListener("click", (e) => act(e.currentTarget, async () => {
+    await store.signInWithApple();
+    if (isNative()) await afterLogin(); // native sheet signs in without leaving the app
+  }));
   $("#phone-btn").addEventListener("click", () => {
     if (!store.supportsSocialLogin) return toast("Phone sign-in switches on once the league database is connected (see README).");
     state.authTab = "phone";
@@ -778,6 +788,70 @@ function bindSetup() {
       toast(`Welcome, ${state.me.displayName}`);
     });
   });
+}
+
+/* ============================================================
+   Paywall (7-day free trial, then weekly / monthly / yearly / lifetime)
+   ============================================================ */
+
+function viewPaywall(previewOnly = false) {
+  const plans = state.plans;
+  const sel = plans.find((p) => p.id === state.plan) || plans[1];
+  const native = isNative();
+  const live = billing.enabled;
+  const active = billing.activeLabel();
+  const cta = sel.trial ? "Start my 7-day free trial" : `Buy lifetime for ${sel.price}`;
+  const after = sel.trial ? `7 days free, then ${sel.price} per ${sel.per}. Cancel anytime before the trial ends and you won't be charged.` : `One payment of ${sel.price}. No subscription, no renewals.`;
+  const legal = native
+    ? "Payment is charged to your Apple ID when the trial ends or at purchase. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel in your App Store account settings."
+    : "Charged to your card through Stripe when the trial ends or at purchase. Subscriptions renew automatically until you cancel, which you can do anytime from your profile.";
+  return `
+  <div class="paywall" style="--img:url('${IMG.motm}')">
+    <div class="pw-panel">
+      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Ball Up Top</span></div>`}
+      <h1 class="auth-h">${active ? "You're a member" : "Your first week is on us"}</h1>
+      ${active ? `<p class="muted">${esc(active.plan)} plan${active.trial ? " (free trial)" : ""}${active.expires && active.renews ? `, renews ${new Date(active.expires).toLocaleDateString()}` : active.expires ? `, ends ${new Date(active.expires).toLocaleDateString()}` : ""}.</p>` : `
+      <ul class="pw-perks">
+        <li>${icon("star")}<span>Rate your teammates and find out what they really think of you</span></li>
+        <li>${icon("trophy")}<span>Man of the match, badges, seasons and the leaderboard</span></li>
+        <li>${icon("users")}<span>Unlimited games, formations, stats, banter and match cards</span></li>
+      </ul>`}
+      <div class="plans" role="radiogroup" aria-label="Plans">
+        ${plans.map((p) => `
+        <button type="button" class="plan ${p.id === sel.id ? "on" : ""}" data-plan="${p.id}" role="radio" aria-checked="${p.id === sel.id}">
+          <span class="plan-radio"></span>
+          <span class="plan-main"><b>${p.label}</b><small>${p.trial ? `7 days free${p.note ? `, ${p.note.toLowerCase()}` : ""}` : p.note}</small></span>
+          <span class="plan-price"><b>${esc(p.price)}</b><small>${p.per === "once" ? "once" : `per ${p.per}`}</small></span>
+          ${p.popular ? `<span class="plan-tag">Most popular</span>` : ""}
+        </button>`).join("")}
+      </div>
+      <button class="btn primary block big" id="pw-buy">${cta}</button>
+      <p class="pw-after">${after}</p>
+      ${!live ? `<p class="demo-note">Preview: payments switch on once the App Store and Stripe are connected.</p>` : ""}
+      <div class="pw-links">
+        <button class="linkish" id="pw-restore">${native ? "Restore purchases" : "Already subscribed? Refresh"}</button>
+        <a href="terms.html" target="_blank" rel="noopener">Terms</a>
+        <a href="privacy.html" target="_blank" rel="noopener">Privacy</a>
+        ${previewOnly ? "" : `<button class="linkish" id="pw-out">Log out</button>`}
+      </div>
+      <p class="pw-legal">${legal}</p>
+    </div>
+  </div>`;
+}
+
+function bindPaywall() {
+  $$("[data-plan]").forEach((b) => b.addEventListener("click", () => { state.plan = b.dataset.plan; rerenderKeepScroll(); }));
+  $("#pw-buy").addEventListener("click", (e) => act(e.currentTarget, async () => {
+    if (!billing.enabled) throw new Error("Payments switch on once the App Store and Stripe are connected.");
+    const ok = await billing.purchase(state.plan, state.me?.email);
+    if (ok) { toast("You're in. Welcome to Ball Up Top."); location.hash = "#/"; render(); }
+  }));
+  $("#pw-restore").addEventListener("click", (e) => act(e.currentTarget, async () => {
+    const ok = await billing.restore();
+    toast(ok ? "Membership restored" : "No active membership found for this account.");
+    if (ok) { location.hash = "#/"; render(); }
+  }));
+  $("#pw-out")?.addEventListener("click", async () => { await billing.logOut(); await store.signOut(); await reload(); render(); });
 }
 
 /* ============================================================
@@ -1720,6 +1794,22 @@ function viewProfile(id) {
       <button class="btn">Save name</button>
       <button type="button" class="btn quiet danger" id="signout">Log out</button>
     </form>
+  </section>
+  <section class="panel pad">
+    <h3>Membership</h3>
+    ${(() => {
+      const a = billing.activeLabel();
+      if (!billing.enabled) return `<p class="muted small">Payments aren't switched on yet. <a class="inline-link" href="#/plans">See the plans</a></p>`;
+      if (!a) return `<p class="muted small">No active membership. <a class="inline-link" href="#/plans">See the plans</a></p>`;
+      const url = billing.manageUrl();
+      return `<p>${esc(a.plan)} plan${a.trial ? ", free trial" : ""}${a.expires ? `<span class="muted small">, ${a.renews ? "renews" : "ends"} ${new Date(a.expires).toLocaleDateString()}</span>` : ""}</p>
+        <div class="inline mt">${url && a.plan !== "Lifetime" ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Manage or cancel</a>` : ""}<a class="btn quiet" href="#/plans">Plans</a></div>`;
+    })()}
+  </section>
+  <section class="panel pad danger-zone">
+    <h3>Delete account</h3>
+    <p class="muted small">Permanently deletes your profile, ratings, comments and stats. ${billing.enabled ? "Deleting your account doesn't cancel a subscription; cancel it first from Manage." : ""}</p>
+    <button class="btn quiet danger" id="delete-account">Delete my account</button>
   </section>` : ""}
 
   <section class="panel pad">
@@ -1796,7 +1886,25 @@ function bindProfile(id) {
       toast("Name saved");
     });
   });
+  const delBtn = $("#delete-account");
+  delBtn?.addEventListener("click", () => {
+    if (!delBtn.dataset.armed) {
+      delBtn.dataset.armed = "1";
+      delBtn.textContent = "Tap again to permanently delete your account";
+      setTimeout(() => { if (delBtn.isConnected) { delete delBtn.dataset.armed; delBtn.textContent = "Delete my account"; } }, 5000);
+      return;
+    }
+    act(delBtn, async () => {
+      await store.deleteAccount(id);
+      await billing.logOut();
+      await reload();
+      location.hash = "#/";
+      render();
+      toast("Your account was deleted");
+    });
+  });
   $("#signout")?.addEventListener("click", async () => {
+    await billing.logOut();
     await store.signOut();
     await reload();
     location.hash = "#/";
@@ -1929,6 +2037,21 @@ function render() {
     return;
   }
 
+  if (route === "plans") {
+    document.body.classList.add("signed-out");
+    main.innerHTML = viewPaywall(true);
+    bindPaywall();
+    if (billing.enabled) billing.loadPlans().then((p) => { if (location.hash.startsWith("#/plans") && JSON.stringify(p) !== JSON.stringify(state.plans)) { state.plans = p; rerenderKeepScroll(); } });
+    return;
+  }
+  if (billing.enabled && !billing.isPro()) {
+    document.body.classList.add("signed-out");
+    main.innerHTML = viewPaywall(false);
+    bindPaywall();
+    billing.loadPlans().then((p) => { if (!billing.isPro() && JSON.stringify(p) !== JSON.stringify(state.plans)) { state.plans = p; rerenderKeepScroll(); } });
+    return;
+  }
+
   const editorKey = route === "new" ? "new" : route === "g" && (sub === "join" || sub === "edit") ? `${param}/${sub}` : null;
   if (editorKey && editorKey !== lastKey) startEditor(route === "new" ? "create" : sub, param);
   lastKey = editorKey;
@@ -1962,6 +2085,14 @@ window.addEventListener("hashchange", () => {
   render();
 });
 
+// Native Google/Apple sign-in finishes in the system browser and comes back here.
+window.addEventListener("but:auth", async (e) => {
+  if (e.detail?.error) toast(e.detail.error);
+  await reload();
+  location.hash = "#/";
+  render();
+});
+
 // In a shared league, pick up new activity every minute while the app is open.
 let lastUnread = null;
 setInterval(async () => {
@@ -1979,8 +2110,7 @@ setInterval(async () => {
   const brand = $("#brand-icon");
   brand.src = IMG.icon;
   brand.onerror = () => brand.remove();
-  $("link[rel=icon]").href = IMG.icon;
-  $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
+    $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
   try {
     await store.init();
     await reload();
