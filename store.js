@@ -12,7 +12,8 @@
 //   rating { id, gameId, raterId, target: playerId | "ref", score, note }
 //   friendship { id, from, to, status:"pending"|"accepted", createdAt }
 //   rsvp   { gameId, userId, status:"in"|"out", createdAt }
-//   comment{ id, gameId, userId, body, createdAt }
+//   comment{ id, gameId, userId, body, parentId (comment it replies to, or null), createdAt }
+//   playerStats { gameId, userId, stats:{...}, updatedAt }  each player enters only their own
 //   game also carries finalAt (whistle time, starts the 24h voting window) and claimedAt.
 //
 // Sign-in: username/password (demo) or email/password, Google and phone codes (Supabase).
@@ -73,7 +74,7 @@ class LocalStore {
   }
   async init() {
     try { this.db = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_) {}
-    if (!this.db || this.db.version !== 3) {
+    if (!this.db || this.db.version !== 4) {
       this.db = await seedData();
       this.db.friends = seedFriends(this.db.users);
       this.#save();
@@ -154,6 +155,7 @@ class LocalStore {
     this.db.ratings = this.db.ratings.filter((r) => r.gameId !== id);
     this.db.rsvps = this.db.rsvps.filter((r) => r.gameId !== id);
     this.db.comments = this.db.comments.filter((c) => c.gameId !== id);
+    this.db.playerStats = this.db.playerStats.filter((r) => r.gameId !== id);
     this.#save();
   }
 
@@ -179,15 +181,30 @@ class LocalStore {
 
   /* comments */
   async listComments() { return structuredClone(this.db.comments); }
-  async addComment(gameId, userId, body) {
+  async addComment(gameId, userId, body, parentId = null) {
     body = body.trim();
     if (!body) throw new Error("Write something first.");
     if (body.length > 500) throw new Error("Keep it under 500 characters.");
-    this.db.comments.push({ id: uid(), gameId, userId, body, createdAt: new Date().toISOString() });
+    this.db.comments.push({ id: uid(), gameId, userId, body, parentId, createdAt: new Date().toISOString() });
     this.#save();
   }
   async deleteComment(id) {
-    this.db.comments = this.db.comments.filter((c) => c.id !== id);
+    // Deleting a comment removes the replies under it too.
+    const gone = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of this.db.comments) if (c.parentId && gone.has(c.parentId) && !gone.has(c.id)) { gone.add(c.id); grew = true; }
+    }
+    this.db.comments = this.db.comments.filter((c) => !gone.has(c.id));
+    this.#save();
+  }
+
+  /* player stats (your own line only) */
+  async listStats() { return structuredClone(this.db.playerStats); }
+  async setStats(gameId, userId, stats) {
+    this.db.playerStats = this.db.playerStats.filter((r) => !(r.gameId === gameId && r.userId === userId));
+    this.db.playerStats.push({ gameId, userId, stats, updatedAt: new Date().toISOString() });
     this.#save();
   }
 
@@ -218,7 +235,7 @@ class LocalStore {
 
   /* demo-only helpers */
   async reset(withDemo) {
-    this.db = withDemo ? await seedData() : { version: 3, users: [], games: [], ratings: [], friends: [], rsvps: [], comments: [] };
+    this.db = withDemo ? await seedData() : { version: 4, users: [], games: [], ratings: [], friends: [], rsvps: [], comments: [], playerStats: [] };
     if (withDemo) this.db.friends = seedFriends(this.db.users);
     this.#save();
     await this.signOut();
@@ -391,12 +408,24 @@ SupabaseStore.prototype.setRsvp = async function (gameId, userId, status) {
 SupabaseStore.prototype.listComments = async function () {
   const { data, error } = await this.sb.from("comments").select("*").order("created_at");
   if (error) throw new Error(error.message);
-  return data.map((r) => ({ id: r.id, gameId: r.game_id, userId: r.user_id, body: r.body, createdAt: r.created_at }));
+  return data.map((r) => ({ id: r.id, gameId: r.game_id, userId: r.user_id, body: r.body, parentId: r.parent_id, createdAt: r.created_at }));
 };
-SupabaseStore.prototype.addComment = async function (gameId, userId, body) {
+SupabaseStore.prototype.addComment = async function (gameId, userId, body, parentId = null) {
   body = body.trim();
   if (!body) throw new Error("Write something first.");
-  const { error } = await this.sb.from("comments").insert({ game_id: gameId, user_id: userId, body: body.slice(0, 500) });
+  const { error } = await this.sb.from("comments").insert({ game_id: gameId, user_id: userId, body: body.slice(0, 500), parent_id: parentId });
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.listStats = async function () {
+  const { data, error } = await this.sb.from("player_stats").select("*");
+  if (error) throw new Error(error.message);
+  return data.map((r) => ({ gameId: r.game_id, userId: r.user_id, stats: r.stats || {}, updatedAt: r.updated_at }));
+};
+SupabaseStore.prototype.setStats = async function (gameId, userId, stats) {
+  const { error } = await this.sb.from("player_stats").upsert(
+    { game_id: gameId, user_id: userId, stats, updated_at: new Date().toISOString() },
+    { onConflict: "game_id,user_id" }
+  );
   if (error) throw new Error(error.message);
 };
 SupabaseStore.prototype.deleteComment = async function (id) {
@@ -508,7 +537,11 @@ async function seedData() {
       }
     }
   };
-  const say = (g, who, hoursAgo, body) => comments.push({ id: uid(), gameId: g.id, userId: U[who], body, createdAt: ago(hoursAgo) });
+  const say = (g, who, hoursAgo, body, parent = null) => {
+    const c = { id: uid(), gameId: g.id, userId: U[who], body, parentId: parent?.id || null, createdAt: ago(hoursAgo) };
+    comments.push(c);
+    return c;
+  };
 
   // Tonight's 6v6, full time 3 hours ago. Votes are still coming in, so ratings are hidden.
   const g0 = {
@@ -521,8 +554,11 @@ async function seedData() {
   };
   games.push(g0);
   rateGame(g0, { sofia: 8.4, marcus: 7.6, nina: 7.1, omar: 6.4, luis: 7.3, zeke: 6.2, kev: 8.6, jay: 8.2, dre: 8.9, tasha: 6.9, benji: 6.3, rico: 7.4 }, 6.8, [U.marcus, U.jay, U.nina, U.benji]);
-  say(g0, "dre", 2.6, "Kev in goal was unreal tonight. 7 saves.");
-  say(g0, "sofia", 2.2, "We had that until the last ten minutes, rematch next week");
+  const kevPost = say(g0, "dre", 2.6, "Kev in goal was unreal tonight. 7 saves.");
+  say(g0, "kev", 2.4, "Had to bail y'all out, the defence was on vacation", kevPost);
+  const rematch = say(g0, "sofia", 2.2, "We had that until the last ten minutes, rematch next week");
+  const marcusIn = say(g0, "marcus", 2.0, "Run it back Sunday. Same pitch.", rematch);
+  say(g0, "jay", 1.8, "Bring a keeper this time", marcusIn);
   say(g0, "jay", 1.4, "Rate your teammates before the window closes!");
 
   // 7v8 soccer two nights ago, revealed.
@@ -539,8 +575,8 @@ async function seedData() {
   };
   games.push(g1);
   rateGame(g1, { sofia: 8.5, marcus: 8, nina: 7, omar: 6.5, luis: 7.6, kev: 6.6, tasha: 7.1, jay: 9.1, dre: 7.5, benji: 6.5, zeke: 6.4, mo: 6.0, ty: 6.5, cam: 6.4, rico: 7.0 }, 7.2);
-  say(g1, "jay", 46, "Hat-trick and we still lost. Football is cruel");
-  say(g1, "marcus", 45, "8 vs 7 and you still couldn't do it 😂");
+  const ht = say(g1, "jay", 46, "Hat-trick and we still lost. Football is cruel");
+  say(g1, "marcus", 45, "8 vs 7 and you still couldn't do it 😂", ht);
   say(g1, "tasha", 40, "Ray actually reffed it straight for once");
 
   // 4v4 soccer last week, revealed.
@@ -584,7 +620,7 @@ async function seedData() {
   }
   say(g4, "sofia", 5.8, "Need a second captain. Who's taking the other side?");
 
-  return { version: 3, users, games, ratings, rsvps, comments, friends: [] };
+  return { version: 4, users, games, ratings, rsvps, comments, friends: [], playerStats: [] };
 }
 
 function seedFriends(users) {

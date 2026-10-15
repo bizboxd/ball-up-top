@@ -452,7 +452,18 @@ button.token:hover { background: rgba(255, 255, 255, .06); }
 .rate-list .btn { margin-top: 14px; }
 
 /* ---------- Banter ---------- */
-.comments { display: grid; gap: 14px; margin-bottom: 16px; }
+.comments { display: grid; gap: 16px; margin-bottom: 16px; }
+.thread { display: grid; gap: 10px; }
+.comment.reply { margin-left: 44px; padding-left: 12px; border-left: 2px solid var(--line2); }
+.c-to { color: var(--ice); font-size: 12.5px; }
+.c-reply { background: none; border: 0; padding: 4px 0 0; color: var(--muted); font: 600 12.5px var(--body); cursor: pointer; }
+.c-reply:hover { color: var(--ice); }
+.reply-form { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.reply-form textarea { flex: 1; min-width: 160px; min-height: 38px; padding: 9px 11px; font-size: 14px; }
+@media (max-width: 520px) { .comment.reply { margin-left: 18px; } }
+.stat-inputs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.stat-inputs label { width: 86px; }
+.stat-inputs input { text-align: center; font: 800 22px/1 var(--display); padding: 8px; }
 .comment { display: flex; gap: 12px; }
 .c-head { display: flex; align-items: baseline; gap: 10px; }
 .c-head b { font-weight: 600; }

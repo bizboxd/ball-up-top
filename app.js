@@ -24,6 +24,7 @@ const SPORTS = {
   other: { label: "Other", icon: "target", stats: [["pts", "PTS"]], key: "pts", keyLabel: "Pts/G", positions: [], img: IMG.ball },
 };
 const sportOf = (g) => SPORTS[g.sport] || SPORTS.other;
+const STAT_NAME = { goals: "Goals", assists: "Assists", saves: "Saves", pts: "Points", reb: "Rebounds", ast: "Assists", stl: "Steals", blk: "Blocks", kills: "Kills", aces: "Aces", blocks: "Blocks", digs: "Digs" };
 
 /* ============================================================
    Icons (drawn for this app, no emoji)
@@ -62,7 +63,8 @@ function icon(name, cls = "") {
 
 const store = createStore();
 const state = {
-  me: null, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [],
+  me: null, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [],
+  replyTo: null,
   feedFilter: "all", feedScope: "friends", leadersSport: "all", leadersSeason: null, squadTab: "friends",
   authTab: "login", phone: { number: "", sent: false },
 };
@@ -72,13 +74,18 @@ async function reload() {
   revealCache = new Map();
   const me = await store.currentUser();
   if (!me) {
-    Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [] });
+    Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [] });
     return;
   }
-  const [users, games, ratings, friendships, rsvps, comments] = await Promise.all([
-    store.listUsers(), store.listGames(), store.listRatings(), store.listFriendships(), store.listRsvps(), store.listComments(),
+  const [users, games, ratings, friendships, rsvps, comments, playerStats] = await Promise.all([
+    store.listUsers(), store.listGames(), store.listRatings(), store.listFriendships(), store.listRsvps(), store.listComments(), store.listStats(),
   ]);
-  Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments });
+  // Each player's own stat line overrides anything stored on the game itself.
+  for (const r of playerStats) {
+    const g = games.find((x) => x.id === r.gameId);
+    if (g) g.stats = { ...(g.stats || {}), [r.userId]: r.stats };
+  }
+  Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments, playerStats });
 }
 
 /* ============================================================
@@ -430,8 +437,13 @@ function buildInbox() {
           : r != null ? `Ratings are in for ${gName(g)}. Your squad gave you <b>${fmt(r)}</b>.`
           : `Ratings are in for ${gName(g)}.`, `#/g/${g.id}`);
     }
-    if (mine) {
-      for (const c of commentsFor(g)) if (c.userId !== me) add(c.createdAt, "chat", `<b>${esc(uname(c.userId))}</b> on ${gName(g)}: “${esc(c.body.length > 70 ? c.body.slice(0, 70) + "…" : c.body)}”`, `#/g/${g.id}#banter`);
+    const all = commentsFor(g);
+    for (const c of all) {
+      if (c.userId === me) continue;
+      const parent = c.parentId ? all.find((x) => x.id === c.parentId) : null;
+      const snip = esc(c.body.length > 70 ? c.body.slice(0, 70) + "…" : c.body);
+      if (parent?.userId === me) add(c.createdAt, "chat", `<b>${esc(uname(c.userId))}</b> replied to you: “${snip}”`, `#/g/${g.id}#banter`);
+      else if (mine) add(c.createdAt, "chat", `<b>${esc(uname(c.userId))}</b> on ${gName(g)}: “${snip}”`, `#/g/${g.id}#banter`);
     }
   }
   const seen = getSeen();
@@ -1211,18 +1223,49 @@ function viewGame(id) {
     }
   }
 
-  // Banter
+  // Your stats: each player fills in only their own line, until voting closes
+  let statsBlock = "";
+  if (g.status === "final" && mySide) {
+    const mineStats = g.stats?.[meId()] || {};
+    statsBlock = voting ? `
+    <section class="panel pad" id="my-stats">
+      <div class="block-head tight"><h3>Your stats</h3><span class="muted small">Only you can edit these. They lock when voting closes.</span></div>
+      <form id="stats-form" class="stat-inputs">
+        ${cfg.stats.map(([k, l]) => `<label>${STAT_NAME[k] || l}<input type="number" min="0" max="199" inputmode="numeric" data-mystat="${k}" value="${esc(mineStats[k] ?? "")}" placeholder="0" aria-label="Your ${(STAT_NAME[k] || l).toLowerCase()}"></label>`).join("")}
+        <button class="btn primary">Save my stats</button>
+      </form>
+    </section>` : "";
+  }
+
+  // Banter, threaded: replies sit under the comment they answer
   const comments = commentsFor(g);
+  const byId = new Map(comments.map((c) => [c.id, c]));
+  const rootOf = (c) => { let r = c; const seen = new Set(); while (r.parentId && byId.has(r.parentId) && !seen.has(r.id)) { seen.add(r.id); r = byId.get(r.parentId); } return r; };
+  const roots = comments.filter((c) => !c.parentId || !byId.has(c.parentId));
+  const repliesOf = (root) => comments.filter((c) => c.id !== root.id && rootOf(c).id === root.id);
+  const commentHtml = (c, isReply) => {
+    const parent = c.parentId ? byId.get(c.parentId) : null;
+    return `
+      <div class="comment ${isReply ? "reply" : ""}" id="c-${c.id}">
+        <a href="#/p/${c.userId}">${avatar(c.userId, isReply ? "xs" : "sm")}</a>
+        <div class="grow"><div class="c-head"><b>${esc(uname(c.userId))}</b>${parent && isReply ? `<span class="c-to">to ${esc(firstName(parent.userId))}</span>` : ""}<small class="muted">${timeAgo(c.createdAt)}</small>
+          ${c.userId === meId() ? `<button class="c-del" data-delcomment="${c.id}" aria-label="Delete comment">${icon("x")}</button>` : ""}</div>
+        <p>${esc(c.body)}</p>
+        <button class="c-reply" data-reply="${c.id}">Reply</button>
+        ${state.replyTo === c.id ? `
+        <form class="reply-form" data-replyform="${c.id}">
+          <textarea rows="1" maxlength="500" placeholder="Reply to ${esc(firstName(c.userId))}" aria-label="Reply to ${esc(uname(c.userId))}"></textarea>
+          <button class="btn primary small">Reply</button>
+          <button type="button" class="btn quiet small" data-cancelreply>Cancel</button>
+        </form>` : ""}
+        </div>
+      </div>`;
+  };
   const banter = `
   <section class="panel pad" id="banter">
     <div class="block-head tight"><h3>Banter</h3><span class="muted small">${comments.length || "No"} comment${comments.length === 1 ? "" : "s"}</span></div>
-    <div class="comments">${comments.map((c) => `
-      <div class="comment">
-        <a href="#/p/${c.userId}">${avatar(c.userId, "sm")}</a>
-        <div class="grow"><div class="c-head"><b>${esc(uname(c.userId))}</b><small class="muted">${timeAgo(c.createdAt)}</small>
-          ${c.userId === meId() ? `<button class="c-del" data-delcomment="${c.id}" aria-label="Delete comment">${icon("x")}</button>` : ""}</div>
-        <p>${esc(c.body)}</p></div>
-      </div>`).join("")}</div>
+    <div class="comments">${roots.map((r) => `
+      <div class="thread">${commentHtml(r, false)}${repliesOf(r).map((c) => commentHtml(c, true)).join("")}</div>`).join("")}</div>
     <form id="comment-form" class="comment-form">
       ${avatar(meId(), "sm")}
       <textarea id="comment-body" rows="1" maxlength="500" placeholder="${g.status === "final" ? "Talk your talk" : "Say something to the squad"}" aria-label="Write a comment"></textarea>
@@ -1254,6 +1297,7 @@ function viewGame(id) {
   </section>` : ""}
 
   ${actionBlock}
+  ${statsBlock}
   ${rateBlock}
   ${rsvpBlock}
   <div class="two-col">${sideBlock("A")}${sideBlock("B")}</div>
@@ -1312,6 +1356,41 @@ function bindGame(id) {
       });
     });
   }
+
+  $("#stats-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const stats = {};
+    $$("[data-mystat]", e.target).forEach((i) => { const v = Math.round(Number(i.value)); if (v > 0) stats[i.dataset.mystat] = v; });
+    act($("button", e.target), async () => {
+      if (!votingOpen(g)) throw new Error("Stats are locked because voting has closed.");
+      if (!teamOf(g, meId())) throw new Error("You can only add stats for games you played in.");
+      await store.setStats(id, meId(), stats);
+      await reload();
+      rerenderKeepScroll();
+      toast("Your stats are saved");
+    });
+  });
+  $$("[data-reply]").forEach((b) => b.addEventListener("click", () => {
+    state.replyTo = state.replyTo === b.dataset.reply ? null : b.dataset.reply;
+    rerenderKeepScroll();
+    $(`[data-replyform="${state.replyTo}"] textarea`)?.focus();
+  }));
+  $$("[data-cancelreply]").forEach((b) => b.addEventListener("click", () => { state.replyTo = null; rerenderKeepScroll(); }));
+  $$("[data-replyform]").forEach((f) => {
+    const t = $("textarea", f);
+    t.addEventListener("input", () => { t.style.height = "auto"; t.style.height = Math.min(140, t.scrollHeight) + "px"; });
+    t.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
+    f.addEventListener("submit", (e) => {
+      e.preventDefault();
+      act($("button", f), async () => {
+        await store.addComment(id, meId(), t.value, f.dataset.replyform);
+        state.replyTo = null;
+        await reload();
+        rerenderKeepScroll();
+        toast("Reply posted");
+      });
+    });
+  });
 
   const cf = $("#comment-form");
   const ta = $("#comment-body");
@@ -1494,14 +1573,6 @@ function viewResult(id) {
   const g = state.games.find((x) => x.id === id);
   if (!g || !g.teamB) return `<div class="empty">This game isn't ready for a score yet. <a href="#/g/${id}">Back to the game</a></div>`;
   if (!captainOf(g, meId())) return `<div class="empty">Only the two captains can post the score. <a href="#/g/${id}">Back to the game</a></div>`;
-  const cfg = sportOf(g);
-  const table = (t) => `
-    <h4 class="team-sub">${esc(t.name)}</h4>
-    <div class="table-wrap"><table class="box">
-      <thead><tr><th>Player</th>${cfg.stats.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-      <tbody>${t.playerIds.map((pid) => `<tr><td><span class="pcell">${avatar(pid, "xs")}${esc(uname(pid))}</span></td>${cfg.stats
-        .map(([k]) => `<td><input type="number" min="0" inputmode="numeric" data-stat="${k}" data-pid="${pid}" value="${esc(g.stats?.[pid]?.[k] ?? "")}" placeholder="0" aria-label="${esc(uname(pid))} ${k}"></td>`).join("")}</tr>`).join("")}</tbody>
-    </table></div>`;
   return `
   <a class="back" href="#/g/${id}">Game</a>
   <h1 class="page-title">Final score</h1>
@@ -1515,8 +1586,7 @@ function viewResult(id) {
         <span class="tname right">${esc(g.teamB.name)}</span>
       </div>
     </section>
-    <section class="panel pad"><h3>Box score <span class="muted small">optional</span></h3>${table(g.teamA)}${table(g.teamB)}</section>
-    ${g.status === "final" ? "" : `<p class="muted small">Posting the score opens 24 hours of voting. Ratings stay hidden until then, or until everyone has voted.</p>`}
+    <p class="muted small">Captains only post the score. Each player adds their own stats from the game page.${g.status === "final" ? "" : " Posting the score opens 24 hours of voting. Ratings stay hidden until then, or until everyone has voted."}</p>
     <button class="btn primary block big">${g.status === "final" ? "Save changes" : "Blow the whistle"}</button>
   </form>`;
 }
@@ -1526,21 +1596,16 @@ function bindResult(id) {
     e.preventDefault();
     const f = e.target;
     const g = state.games.find((x) => x.id === id);
-    const stats = {};
-    $$("[data-stat]", f).forEach((i) => {
-      const v = Number(i.value);
-      if (v > 0) (stats[i.dataset.pid] ??= {})[i.dataset.stat] = v;
-    });
     act($("button", f), async () => {
       await store.updateGame(id, {
-        status: "final", stats,
+        status: "final",
         finalAt: g.finalAt || new Date().toISOString(),
         teamA: { ...g.teamA, score: Number(f.a.value) || 0 },
         teamB: { ...g.teamB, score: Number(f.b.value) || 0 },
       });
       await reload();
       location.hash = `#/g/${id}`;
-      toast(g.status === "final" ? "Saved" : "Full time. Voting is open for 24 hours.");
+      toast(g.status === "final" ? "Score saved" : "Full time. Add your stats and rate your team.");
     });
   });
 }
@@ -1891,6 +1956,7 @@ function render() {
 let prevRoute = null;
 window.addEventListener("hashchange", () => {
   const r = location.hash.split("#")[1]?.split("/").slice(0, 3).join("/");
+  if (r !== prevRoute) state.replyTo = null;
   if (r !== prevRoute && !location.hash.endsWith("#banter")) window.scrollTo(0, 0);
   prevRoute = r;
   render();

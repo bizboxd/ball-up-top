@@ -7,7 +7,7 @@
 1. **Start a game.** Whoever creates it is captain of the first side. They pick the sport, time, place, an optional ref, their players and their formation.
 2. **RSVP.** Anyone can tap *I'm in* or *Can't make it* on an upcoming run. Captains see the people who are in at the top of their player list.
 3. **Second captain claims the other side.** A game needs two captains. Teams don't have to be even (7v8, 4v5, whatever showed up).
-4. **Final whistle.** Either captain posts the score and an optional box score. That opens **24 hours of voting**.
+4. **Final whistle.** Either captain posts the score. That opens **24 hours of voting**. Each player adds **only their own stats** (goals, assists, points...) from the game page; stats lock when voting closes.
 5. **Ratings.** Every player rates their **own teammates only** (never the other team, never themselves) plus **the ref**, from 0.1 to 10.0 in 0.1 steps.
 6. **The reveal.** Ratings stay hidden until voting closes, or earlier if every vote is in. A game rating only counts once **at least 2 people** have rated you.
 7. **Man of the match** goes to the highest-rated player across both teams.
@@ -15,7 +15,7 @@
 ## Everything else
 
 - **Inbox** with friend requests, games you're added to, RSVPs to your runs, rating reminders, reveals and banter.
-- **Banter**: comments on every game.
+- **Banter**: comments on every game, with replies to specific comments.
 - **Friends**: requests, accept/decline, a friends-only feed, friends listed first when picking teams.
 - **Profiles**: profile pic upload, overall and season ratings, badges, form, rating trend, best game, per-sport stats, upcoming games, past games.
 - **Leaders**: monthly seasons plus all-time, podium, per-sport tables and a ref table.

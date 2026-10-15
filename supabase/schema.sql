@@ -194,12 +194,41 @@ create table if not exists public.comments (
   game_id uuid not null references public.games(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
   body text not null check (length(body) between 1 and 500),
+  parent_id uuid references public.comments(id) on delete cascade,  -- the comment this replies to
   created_at timestamptz not null default now()
 );
+alter table public.comments add column if not exists parent_id uuid references public.comments(id) on delete cascade;
 alter table public.comments enable row level security;
 create policy "comments are visible to signed-in users" on public.comments for select to authenticated using (true);
 create policy "post as yourself" on public.comments for insert to authenticated with check (user_id = auth.uid());
 create policy "delete your own comments" on public.comments for delete to authenticated using (user_id = auth.uid());
+
+-- ============ Player stats ============
+-- Each player enters only their own line (goals, assists, points...) for games they played in.
+-- Stats lock when voting closes.
+create table if not exists public.player_stats (
+  game_id uuid not null references public.games(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  stats jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (game_id, user_id)
+);
+alter table public.player_stats enable row level security;
+
+create or replace function public.played_in(gid uuid, uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.games g where g.id = gid and g.status = 'final'
+      and ((g.team_a->'playerIds') ? uid::text or (g.team_b->'playerIds') ? uid::text)
+  );
+$$;
+
+create policy "stats are visible to signed-in users" on public.player_stats for select to authenticated using (true);
+create policy "enter your own stats" on public.player_stats for insert to authenticated
+  with check (user_id = auth.uid() and public.played_in(game_id, auth.uid()) and not public.game_revealed(game_id));
+create policy "edit your own stats" on public.player_stats for update to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid() and public.played_in(game_id, auth.uid()) and not public.game_revealed(game_id));
 
 -- ============ Friends ============
 create table if not exists public.friendships (
