@@ -5,16 +5,22 @@
 ## How a game works
 
 1. **Start a game.** Whoever creates it is captain of the first side. They pick the sport, time, place, an optional ref, their players and their formation.
-2. **Second captain claims the other side.** A game needs two captains. Share the invite link; the second captain picks their own players and sets their own formation. Teams don't have to be even (7v8, 4v5, whatever showed up).
-3. **Final whistle.** Either captain posts the score and an optional box score.
-4. **Ratings.** Every player rates their **own teammates only** (never the other team, never themselves) plus **the ref**, from 1 to 10.
-5. **Man of the match** goes to the highest-rated player across both teams.
+2. **RSVP.** Anyone can tap *I'm in* or *Can't make it* on an upcoming run. Captains see the people who are in at the top of their player list.
+3. **Second captain claims the other side.** A game needs two captains. Teams don't have to be even (7v8, 4v5, whatever showed up).
+4. **Final whistle.** Either captain posts the score and an optional box score. That opens **24 hours of voting**.
+5. **Ratings.** Every player rates their **own teammates only** (never the other team, never themselves) plus **the ref**, from 1.0 to 10.0 in 0.1 steps.
+6. **The reveal.** Ratings stay hidden until voting closes, or earlier if every vote is in. A game rating only counts once **at least 2 people** have rated you.
+7. **Man of the match** goes to the highest-rated player across both teams.
 
-**Friends.** Send, accept and decline friend requests from the Squad page or anyone's profile. The feed defaults to games involving you and your friends (switch to Everyone any time), and when you build a team your friends are listed first.
+## Everything else
 
-**Ratings** go in 0.1 steps: drag the slider or tap − / + to fine-tune.
-
-Player profiles show overall rating, form, rating trend, best game, MOTMs, per-sport stats and (for refs) a ref rating. The leaderboard ranks players by sport and lists refs separately.
+- **Inbox** with friend requests, games you're added to, RSVPs to your runs, rating reminders, reveals and banter.
+- **Banter**: comments on every game.
+- **Friends**: requests, accept/decline, a friends-only feed, friends listed first when picking teams.
+- **Profiles**: profile pic upload, overall and season ratings, badges, form, rating trend, best game, per-sport stats, upcoming games, past games.
+- **Leaders**: monthly seasons plus all-time, podium, per-sport tables and a ref table.
+- **Badges**: Hat-trick, Playmaker, The wall, Bucket getter, Elite night, Back to back, Heater, Skipper, Regular, Trusted whistle.
+- **Match card**: one tap turns a result into a 1080×1350 image for stories or the group chat.
 
 ## Run it
 

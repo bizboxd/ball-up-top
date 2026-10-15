@@ -11,6 +11,9 @@
 //            ref:{ userId:string|null, name:string }|null, stats:{ playerId:{...} } }
 //   rating { id, gameId, raterId, target: playerId | "ref", score, note }
 //   friendship { id, from, to, status:"pending"|"accepted", createdAt }
+//   rsvp   { gameId, userId, status:"in"|"out", createdAt }
+//   comment{ id, gameId, userId, body, createdAt }
+//   game also carries finalAt (whistle time, starts the 24h voting window) and claimedAt.
 //
 // Sign-in: username/password (demo) or email/password, Google and phone codes (Supabase).
 
@@ -70,11 +73,8 @@ class LocalStore {
   }
   async init() {
     try { this.db = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_) {}
-    if (!this.db || this.db.version !== 2) {
+    if (!this.db || this.db.version !== 3) {
       this.db = await seedData();
-      this.#save();
-    }
-    if (!this.db.friends) {
       this.db.friends = seedFriends(this.db.users);
       this.#save();
     }
@@ -152,17 +152,42 @@ class LocalStore {
   async deleteGame(id) {
     this.db.games = this.db.games.filter((g) => g.id !== id);
     this.db.ratings = this.db.ratings.filter((r) => r.gameId !== id);
+    this.db.rsvps = this.db.rsvps.filter((r) => r.gameId !== id);
+    this.db.comments = this.db.comments.filter((c) => c.gameId !== id);
     this.#save();
   }
 
   /* ratings */
   async listRatings() { return structuredClone(this.db.ratings); }
   async upsertRatings(list) {
+    const now = new Date().toISOString();
     for (const { gameId, raterId, target, score, note = "" } of list) {
       const ex = this.db.ratings.find((r) => r.gameId === gameId && r.raterId === raterId && r.target === target);
       if (ex) Object.assign(ex, { score, note });
-      else this.db.ratings.push({ id: uid(), gameId, raterId, target, score, note });
+      else this.db.ratings.push({ id: uid(), gameId, raterId, target, score, note, createdAt: now });
     }
+    this.#save();
+  }
+
+  /* rsvps */
+  async listRsvps() { return structuredClone(this.db.rsvps); }
+  async setRsvp(gameId, userId, status) {
+    this.db.rsvps = this.db.rsvps.filter((r) => !(r.gameId === gameId && r.userId === userId));
+    if (status) this.db.rsvps.push({ gameId, userId, status, createdAt: new Date().toISOString() });
+    this.#save();
+  }
+
+  /* comments */
+  async listComments() { return structuredClone(this.db.comments); }
+  async addComment(gameId, userId, body) {
+    body = body.trim();
+    if (!body) throw new Error("Write something first.");
+    if (body.length > 500) throw new Error("Keep it under 500 characters.");
+    this.db.comments.push({ id: uid(), gameId, userId, body, createdAt: new Date().toISOString() });
+    this.#save();
+  }
+  async deleteComment(id) {
+    this.db.comments = this.db.comments.filter((c) => c.id !== id);
     this.#save();
   }
 
@@ -193,7 +218,7 @@ class LocalStore {
 
   /* demo-only helpers */
   async reset(withDemo) {
-    this.db = withDemo ? await seedData() : { version: 2, users: [], games: [], ratings: [], friends: [] };
+    this.db = withDemo ? await seedData() : { version: 3, users: [], games: [], ratings: [], friends: [], rsvps: [], comments: [] };
     if (withDemo) this.db.friends = seedFriends(this.db.users);
     this.#save();
     await this.signOut();
@@ -247,6 +272,7 @@ class SupabaseStore {
       id: r.id, sport: r.sport, date: r.played_on, time: r.kickoff || "", location: r.location || "",
       createdBy: r.created_by, createdAt: r.created_at, status: r.status,
       teamA: r.team_a, teamB: r.team_b, ref: r.ref, stats: r.stats || {},
+      finalAt: r.final_at, claimedAt: r.claimed_at,
     };
   }
 
@@ -321,6 +347,8 @@ class SupabaseStore {
     if ("teamB" in g) out.team_b = g.teamB;
     if ("ref" in g) out.ref = g.ref;
     if ("stats" in g) out.stats = g.stats;
+    if ("finalAt" in g) out.final_at = g.finalAt;
+    if ("claimedAt" in g) out.claimed_at = g.claimedAt;
     return out;
   }
   async createGame(g) {
@@ -334,7 +362,7 @@ class SupabaseStore {
   /* ratings */
   async listRatings() {
     return this.#ok(await this.sb.from("ratings").select("*")).map((r) => ({
-      id: r.id, gameId: r.game_id, raterId: r.rater_id, target: r.target, score: Number(r.score), note: r.note || "",
+      id: r.id, gameId: r.game_id, raterId: r.rater_id, target: r.target, score: Number(r.score), note: r.note || "", createdAt: r.created_at,
     }));
   }
   async upsertRatings(list) {
@@ -347,6 +375,34 @@ class SupabaseStore {
     );
   }
 }
+
+SupabaseStore.prototype.listRsvps = async function () {
+  const { data, error } = await this.sb.from("rsvps").select("*");
+  if (error) throw new Error(error.message);
+  return data.map((r) => ({ gameId: r.game_id, userId: r.user_id, status: r.status, createdAt: r.created_at }));
+};
+SupabaseStore.prototype.setRsvp = async function (gameId, userId, status) {
+  const q = status
+    ? this.sb.from("rsvps").upsert({ game_id: gameId, user_id: userId, status }, { onConflict: "game_id,user_id" })
+    : this.sb.from("rsvps").delete().eq("game_id", gameId).eq("user_id", userId);
+  const { error } = await q;
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.listComments = async function () {
+  const { data, error } = await this.sb.from("comments").select("*").order("created_at");
+  if (error) throw new Error(error.message);
+  return data.map((r) => ({ id: r.id, gameId: r.game_id, userId: r.user_id, body: r.body, createdAt: r.created_at }));
+};
+SupabaseStore.prototype.addComment = async function (gameId, userId, body) {
+  body = body.trim();
+  if (!body) throw new Error("Write something first.");
+  const { error } = await this.sb.from("comments").insert({ game_id: gameId, user_id: userId, body: body.slice(0, 500) });
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.deleteComment = async function (id) {
+  const { error } = await this.sb.from("comments").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+};
 
 SupabaseStore.prototype.listFriendships = async function () {
   const { data, error } = await this.sb.from("friendships").select("*");
@@ -411,17 +467,17 @@ async function seedData() {
     const salt = uid();
     users.push({
       id: uid(), username, displayName, salt, passHash: await sha256(salt + "demo123"),
-      avatar, color: colorFor(i), createdAt: new Date(Date.now() - (30 - i) * 864e5).toISOString(),
+      avatar, color: colorFor(i), createdAt: new Date(Date.now() - (60 - i) * 864e5).toISOString(),
     });
   }
   const U = Object.fromEntries(users.map((u) => [u.username, u.id]));
-  const day = (n) => {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
+  const H = 36e5;
+  const ago = (hours) => new Date(Date.now() - hours * H).toISOString();
+  const dayOf = (hoursAgo) => {
+    const d = new Date(Date.now() - hoursAgo * H);
     return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
   };
-  const games = [];
-  const ratings = [];
+  const games = [], ratings = [], rsvps = [], comments = [];
 
   const team = (captain, name, players, formation, gk, score, positions = {}) => {
     const ids = players.map((p) => U[p]);
@@ -434,27 +490,45 @@ async function seedData() {
     return { captainId: U[captain], name, playerIds: ids, formation, gk, slots, positions, score };
   };
 
-  const rateGame = (g, base, refBase) => {
-    const jit = (a, b) => (((a.charCodeAt(0) + b.charCodeAt(2)) % 5) - 2) * 0.25;
+  // Every teammate rates every teammate (and the ref). `skip` leaves some raters out (voting still open).
+  const rateGame = (g, base, refBase, skip = []) => {
+    const jit = (a, b) => (((a.charCodeAt(0) + b.charCodeAt(2) + a.charCodeAt(5)) % 9) - 4) * 0.1;
+    const t0 = new Date(g.finalAt).getTime();
     for (const t of [g.teamA, g.teamB]) {
       for (const r of t.playerIds) {
+        if (skip.includes(r)) continue;
+        const at = new Date(t0 + ((r.charCodeAt(0) % 9) + 1) * 0.4 * H).toISOString();
         for (const e of t.playerIds) {
           if (r === e) continue;
           const name = users.find((u) => u.id === e).username;
-          const score = Math.max(1, Math.min(10, Math.round(((base[name] ?? 6.5) + jit(r, e)) * 2) / 2));
-          ratings.push({ id: uid(), gameId: g.id, raterId: r, target: e, score, note: "" });
+          const score = Math.max(1, Math.min(10, Math.round(((base[name] ?? 6.5) + jit(r, e)) * 10) / 10));
+          ratings.push({ id: uid(), gameId: g.id, raterId: r, target: e, score, note: "", createdAt: at });
         }
-        if (g.ref && refBase) {
-          ratings.push({ id: uid(), gameId: g.id, raterId: r, target: "ref", score: Math.round((refBase + jit(r, "ref")) * 2) / 2, note: "" });
-        }
+        if (g.ref && refBase) ratings.push({ id: uid(), gameId: g.id, raterId: r, target: "ref", score: Math.round((refBase + jit(r, "ref")) * 10) / 10, note: "", createdAt: at });
       }
     }
   };
+  const say = (g, who, hoursAgo, body) => comments.push({ id: uid(), gameId: g.id, userId: U[who], body, createdAt: ago(hoursAgo) });
 
-  // 7v8 soccer, final
+  // Tonight's 6v6, full time 3 hours ago. Votes are still coming in, so ratings are hidden.
+  const g0 = {
+    id: uid(), sport: "soccer", date: dayOf(4), time: "18:30", location: "Hope High cage",
+    createdBy: U.marcus, createdAt: ago(30), claimedAt: ago(26), finalAt: ago(3), status: "final",
+    teamA: team("marcus", "Marcus FC", ["luis", "marcus", "sofia", "nina", "omar", "zeke"], "2-2-1", true, 3),
+    teamB: team("jay", "Jay's Squad", ["kev", "jay", "dre", "tasha", "benji", "rico"], "2-1-2", true, 5),
+    ref: { userId: U.coach_ray, name: "Ray (Ref)" },
+    stats: { [U.sofia]: { goals: 2 }, [U.marcus]: { assists: 2 }, [U.nina]: { goals: 1 }, [U.jay]: { goals: 2, assists: 1 }, [U.dre]: { goals: 2, assists: 2 }, [U.rico]: { goals: 1 }, [U.kev]: { saves: 7 }, [U.luis]: { saves: 4 } },
+  };
+  games.push(g0);
+  rateGame(g0, { sofia: 8.4, marcus: 7.6, nina: 7.1, omar: 6.4, luis: 7.3, zeke: 6.2, kev: 8.6, jay: 8.2, dre: 8.9, tasha: 6.9, benji: 6.3, rico: 7.4 }, 6.8, [U.marcus, U.jay, U.nina, U.benji]);
+  say(g0, "dre", 2.6, "Kev in goal was unreal tonight. 7 saves.");
+  say(g0, "sofia", 2.2, "We had that until the last ten minutes, rematch next week");
+  say(g0, "jay", 1.4, "Rate your teammates before the window closes!");
+
+  // 7v8 soccer two nights ago, revealed.
   const g1 = {
-    id: uid(), sport: "soccer", date: day(1), time: "19:30", location: "Slater Park turf",
-    createdBy: U.marcus, createdAt: new Date(Date.now() - 2 * 864e5).toISOString(), status: "final",
+    id: uid(), sport: "soccer", date: dayOf(50), time: "19:30", location: "Slater Park turf",
+    createdBy: U.marcus, createdAt: ago(90), claimedAt: ago(80), finalAt: ago(48), status: "final",
     teamA: team("marcus", "Night Shift", ["luis", "marcus", "omar", "sofia", "kev", "tasha", "nina"], "2-3-1", true, 5),
     teamB: team("jay", "Cage FC", ["benji", "zeke", "mo", "ty", "dre", "cam", "rico", "jay"], "3-3-1", true, 4),
     ref: { userId: U.coach_ray, name: "Ray (Ref)" },
@@ -464,45 +538,53 @@ async function seedData() {
     },
   };
   games.push(g1);
-  rateGame(g1, { sofia: 8.5, marcus: 8, nina: 7, omar: 6.5, luis: 7.5, kev: 6.5, tasha: 7, jay: 9, dre: 7.5, benji: 6.5, zeke: 6.5, mo: 6, ty: 6.5, cam: 6.5, rico: 7 }, 7);
+  rateGame(g1, { sofia: 8.5, marcus: 8, nina: 7, omar: 6.5, luis: 7.6, kev: 6.6, tasha: 7.1, jay: 9.1, dre: 7.5, benji: 6.5, zeke: 6.4, mo: 6.0, ty: 6.5, cam: 6.4, rico: 7.0 }, 7.2);
+  say(g1, "jay", 46, "Hat-trick and we still lost. Football is cruel");
+  say(g1, "marcus", 45, "8 vs 7 and you still couldn't do it 😂");
+  say(g1, "tasha", 40, "Ray actually reffed it straight for once");
 
-  // 4v4 soccer, final, no ref
+  // 4v4 soccer last week, revealed.
   const g2 = {
-    id: uid(), sport: "soccer", date: day(4), time: "18:00", location: "Hope High cage",
-    createdBy: U.dre, createdAt: new Date(Date.now() - 5 * 864e5).toISOString(), status: "final",
+    id: uid(), sport: "soccer", date: dayOf(100), time: "18:00", location: "Hope High cage",
+    createdBy: U.dre, createdAt: ago(130), claimedAt: ago(120), finalAt: ago(98), status: "final",
     teamA: team("dre", "Bibs", ["kev", "dre", "jay", "nina"], "2-1", true, 6),
     teamB: team("sofia", "No Bibs", ["omar", "sofia", "luis", "marcus"], "1-2", true, 6),
     ref: null,
     stats: { [U.jay]: { goals: 3 }, [U.dre]: { goals: 2, assists: 3 }, [U.nina]: { goals: 1 }, [U.sofia]: { goals: 3, assists: 1 }, [U.marcus]: { goals: 2 }, [U.luis]: { goals: 1, assists: 2 }, [U.kev]: { saves: 5 }, [U.omar]: { saves: 3 } },
   };
   games.push(g2);
-  rateGame(g2, { kev: 7, dre: 8.5, jay: 8, nina: 6.5, omar: 6.5, sofia: 9, luis: 7, marcus: 7.5 });
+  rateGame(g2, { kev: 7.1, dre: 8.6, jay: 8.1, nina: 6.6, omar: 6.4, sofia: 9.0, luis: 7.0, marcus: 7.5 });
 
-  // 3v3 basketball, final, with a ref
+  // 3v3 basketball, revealed, with a ref who isn't on the app.
   const g3 = {
-    id: uid(), sport: "basketball", date: day(6), time: "20:00", location: "Slater Park courts",
-    createdBy: U.jay, createdAt: new Date(Date.now() - 7 * 864e5).toISOString(), status: "final",
-    teamA: team("jay", "Shirts", ["jay", "tasha", "kev"], null, false, 21, {}),
-    teamB: team("marcus", "Skins", ["marcus", "dre", "benji"], null, false, 17, {}),
+    id: uid(), sport: "basketball", date: dayOf(146), time: "20:00", location: "Slater Park courts",
+    createdBy: U.jay, createdAt: ago(170), claimedAt: ago(160), finalAt: ago(144), status: "final",
+    teamA: team("jay", "Shirts", ["jay", "tasha", "kev"], null, false, 21),
+    teamB: team("marcus", "Skins", ["marcus", "dre", "benji"], null, false, 17),
     ref: { userId: null, name: "Big Mike" },
     stats: { [U.jay]: { pts: 9, reb: 4, ast: 3 }, [U.tasha]: { pts: 7, ast: 5 }, [U.kev]: { pts: 5, reb: 8, blk: 2 }, [U.marcus]: { pts: 8, reb: 3 }, [U.dre]: { pts: 7, ast: 4, stl: 2 }, [U.benji]: { pts: 2, reb: 6 } },
   };
   g3.teamA.positions = { [U.jay]: "SG", [U.tasha]: "PG", [U.kev]: "C" };
   g3.teamB.positions = { [U.marcus]: "SF", [U.dre]: "PG", [U.benji]: "C" };
   games.push(g3);
-  rateGame(g3, { jay: 8, tasha: 8, kev: 7.5, marcus: 7, dre: 7.5, benji: 6 }, 5.5);
+  rateGame(g3, { jay: 8.0, tasha: 8.1, kev: 7.4, marcus: 7.0, dre: 7.6, benji: 5.9 }, 5.4);
 
-  // Open game waiting for an opposing captain
-  games.push({
-    id: uid(), sport: "soccer", date: day(-2), time: "19:00", location: "Slater Park turf",
-    createdBy: U.sofia, createdAt: new Date().toISOString(), status: "open",
+  // Open run in two days, waiting on a second captain. People are RSVPing.
+  const g4 = {
+    id: uid(), sport: "soccer", date: dayOf(-48), time: "19:00", location: "Slater Park turf",
+    createdBy: U.sofia, createdAt: ago(6), status: "open",
     teamA: team("sofia", "Sofia's Squad", ["luis", "sofia", "nina", "omar", "tasha"], "2-1-1", true, null),
     teamB: null,
     ref: { userId: U.coach_ray, name: "Ray (Ref)" },
     stats: {},
-  });
+  };
+  games.push(g4);
+  for (const [who, st, h] of [["sofia", "in", 6], ["luis", "in", 5.5], ["nina", "in", 5], ["dre", "in", 4], ["jay", "in", 3], ["kev", "in", 2.5], ["benji", "out", 2], ["rico", "in", 1]]) {
+    rsvps.push({ gameId: g4.id, userId: U[who], status: st, createdAt: ago(h) });
+  }
+  say(g4, "sofia", 5.8, "Need a second captain. Who's taking the other side?");
 
-  return { version: 2, users, games, ratings };
+  return { version: 3, users, games, ratings, rsvps, comments, friends: [] };
 }
 
 function seedFriends(users) {

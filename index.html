@@ -3,27 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Ball Up Top · Pickup, rated</title>
-  <meta name="description" content="Log pickup games, set your formation and rate your teammates out of 10.">
-  <meta name="theme-color" content="#0b0d10">
+  <title>Ball Up Top</title>
+  <meta name="description" content="Pickup games, rated by your teammates. Log the run, set the formation, vote on who cooked.">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
   <link rel="icon" href="data:,">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Separate requests so one family can't block the other -->
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="signed-out">
   <header class="topbar">
-    <a href="#/" class="brand"><img id="brand-icon" alt=""><span>BALL UP TOP</span></a>
-    <nav class="nav">
-      <a href="#/">Feed</a>
-      <a href="#/new" class="nav-new">＋ Game</a>
-      <a href="#/leaders">Leaders</a>
-      <a href="#/squad">Squad<span id="squad-dot" class="dot" hidden></span></a>
-      <a href="#/p/" id="nav-me" class="nav-me"><span id="nav-me-avatar"></span><span class="lbl">Me</span><span id="rate-dot" class="dot" hidden></span></a>
+    <a href="#/" class="brand"><img id="brand-icon" alt=""><span>Ball Up Top</span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="#/" data-nav=""><span data-icon="home"></span><span class="lbl">Feed</span></a>
+      <a href="#/leaders" data-nav="leaders"><span data-icon="trophy"></span><span class="lbl">Leaders</span></a>
+      <a href="#/new" data-nav="new" class="nav-new"><span data-icon="plus"></span><span class="lbl">Game</span></a>
+      <a href="#/squad" data-nav="squad"><span data-icon="users"></span><span class="lbl">Squad</span><span id="squad-dot" class="dot" hidden></span></a>
+      <a href="#/p/" id="nav-me" data-nav="me"><span id="nav-me-avatar"></span><span class="lbl">Me</span><span id="rate-dot" class="dot" hidden></span></a>
     </nav>
+    <a href="#/inbox" class="bell" data-nav="inbox" aria-label="Inbox"><span data-icon="bell"></span><span id="inbox-dot" class="dot" hidden></span></a>
   </header>
-  <main id="main"><div class="loading">Loading the run…</div></main>
+  <main id="main"><div class="loading">Loading the run</div></main>
+  <div id="modal" class="modal" hidden></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="config.js"></script>
   <script type="module" src="app.js"></script>

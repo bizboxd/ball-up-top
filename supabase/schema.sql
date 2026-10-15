@@ -71,8 +71,12 @@ create table if not exists public.games (
   team_b jsonb,
   ref jsonb,
   stats jsonb not null default '{}'::jsonb,
+  final_at timestamptz,    -- full-time whistle; starts the 24h voting window
+  claimed_at timestamptz,  -- when the second captain locked the game in
   created_at timestamptz not null default now()
 );
+alter table public.games add column if not exists final_at timestamptz;
+alter table public.games add column if not exists claimed_at timestamptz;
 
 alter table public.games enable row level security;
 
@@ -114,14 +118,32 @@ create table if not exists public.ratings (
 
 alter table public.ratings enable row level security;
 
-create policy "ratings are visible to signed-in users"
-  on public.ratings for select to authenticated using (true);
+-- Ratings stay hidden until the reveal: 24 hours after full time, or as soon as
+-- every eligible vote is in. Before that you only see the votes you cast.
+create or replace function public.game_revealed(gid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select g.status = 'final' and g.final_at is not null and (
+    g.final_at <= now() - interval '24 hours'
+    or (select count(*) from public.ratings r where r.game_id = g.id) >= (
+      coalesce(jsonb_array_length(g.team_a->'playerIds'), 0) * (coalesce(jsonb_array_length(g.team_a->'playerIds'), 0) - 1)
+      + coalesce(jsonb_array_length(g.team_b->'playerIds'), 0) * (coalesce(jsonb_array_length(g.team_b->'playerIds'), 0) - 1)
+      + case when g.ref is not null
+          then coalesce(jsonb_array_length(g.team_a->'playerIds'), 0) + coalesce(jsonb_array_length(g.team_b->'playerIds'), 0)
+          else 0 end
+    )
+  )
+  from public.games g where g.id = gid;
+$$;
+
+create policy "see your own votes, everyone's after the reveal"
+  on public.ratings for select to authenticated
+  using (rater_id = auth.uid() or public.game_revealed(game_id));
 
 -- The core rule: you only rate your own teammates (never yourself, never the
 -- other team) plus the ref, and only after the final whistle.
 create or replace function public.can_rate(g public.games, rater uuid, tgt text)
 returns boolean language sql stable as $$
-  select g.status = 'final' and (
+  select g.status = 'final' and not public.game_revealed(g.id) and (
     (
       (g.team_a->'playerIds') ? rater::text
       and (tgt = 'ref' or ((g.team_a->'playerIds') ? tgt and tgt <> rater::text))
@@ -147,6 +169,33 @@ create policy "change your own ratings"
     rater_id = auth.uid()
     and exists (select 1 from public.games g where g.id = game_id and public.can_rate(g, auth.uid(), target))
   );
+
+-- ============ RSVPs ============
+create table if not exists public.rsvps (
+  game_id uuid not null references public.games(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null check (status in ('in', 'out')),
+  created_at timestamptz not null default now(),
+  primary key (game_id, user_id)
+);
+alter table public.rsvps enable row level security;
+create policy "rsvps are visible to signed-in users" on public.rsvps for select to authenticated using (true);
+create policy "rsvp for yourself" on public.rsvps for insert to authenticated with check (user_id = auth.uid());
+create policy "change your rsvp" on public.rsvps for update to authenticated using (user_id = auth.uid());
+create policy "withdraw your rsvp" on public.rsvps for delete to authenticated using (user_id = auth.uid());
+
+-- ============ Comments ============
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  game_id uuid not null references public.games(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null check (length(body) between 1 and 500),
+  created_at timestamptz not null default now()
+);
+alter table public.comments enable row level security;
+create policy "comments are visible to signed-in users" on public.comments for select to authenticated using (true);
+create policy "post as yourself" on public.comments for insert to authenticated with check (user_id = auth.uid());
+create policy "delete your own comments" on public.comments for delete to authenticated using (user_id = auth.uid());
 
 -- ============ Friends ============
 create table if not exists public.friendships (
