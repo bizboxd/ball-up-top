@@ -28,6 +28,15 @@ After a 7-day free trial, Ball Up Top needs a membership: **$2/week, $5/month, $
 Payments run through RevenueCat: Apple in-app purchase in the iPhone app, Stripe on the website, one membership for both.
 Put the RevenueCat public keys in `config.js` to switch the paywall on. Without them the app is free to use.
 
+| Plan | App Store product ID | Price | Trial | RevenueCat package |
+| --- | --- | --- | --- | --- |
+| Weekly | `com.bizboxd.balluptop.weekly` | $2.00 / week | 7 days free | `$rc_weekly` |
+| Monthly | `com.bizboxd.balluptop.monthly` | $5.00 / month | 7 days free | `$rc_monthly` |
+| Yearly | `com.bizboxd.balluptop.yearly` | $30.00 / year | 7 days free | `$rc_annual` |
+| Lifetime | `com.bizboxd.balluptop.lifetime` | $50.00 once | none | `$rc_lifetime` |
+
+All four unlock the RevenueCat entitlement `pro`. App Store app: "Ball Up Top - Rate Your Run" (bundle `com.bizboxd.balluptop`, Apple ID 6823302773). Subscription group: "Ball Up Top Membership".
+
 ## iPhone app
 
 The iPhone app wraps this same site with Capacitor. `.github/workflows/ios.yml` builds it on GitHub's Macs:
