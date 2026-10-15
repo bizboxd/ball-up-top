@@ -8,8 +8,11 @@ create table if not exists public.profiles (
   display_name text not null,
   avatar_url text,
   color text not null default '#c6ff3d',
+  -- false until a Google / phone user picks their username on first login
+  onboarded boolean not null default true,
   created_at timestamptz not null default now()
 );
+alter table public.profiles add column if not exists onboarded boolean not null default true;
 
 alter table public.profiles enable row level security;
 
@@ -24,12 +27,26 @@ create policy "you can edit your own profile"
 -- Create the profile automatically when someone signs up.
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  meta jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  picked text := meta->>'username';
+  base text;
 begin
-  insert into public.profiles (id, username, display_name, color)
+  -- Email sign-ups choose a username up front. Google and phone sign-ups get a
+  -- temporary unique one and pick their real username on first login.
+  if picked is null then
+    base := lower(regexp_replace(coalesce(split_part(new.email, '@', 1), ''), '[^a-zA-Z0-9_.]', '', 'g'));
+    if length(base) < 3 then base := 'player'; end if;
+    picked := left(base, 14) || '_' || substr(replace(new.id::text, '-', ''), 1, 5);
+  end if;
+
+  insert into public.profiles (id, username, display_name, avatar_url, onboarded, color)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
-    coalesce(new.raw_user_meta_data->>'display_name', new.raw_user_meta_data->>'username', 'Player'),
+    picked,
+    coalesce(meta->>'display_name', meta->>'full_name', meta->>'name', meta->>'username', 'Player'),
+    meta->>'avatar_url',
+    meta ? 'username',
     (array['#c6ff3d','#38bdf8','#f97316','#a78bfa','#f472b6','#facc15','#2dd4bf','#fb7185','#818cf8','#4ade80'])[1 + floor(random() * 10)::int]
   )
   on conflict (id) do nothing;
@@ -130,6 +147,34 @@ create policy "change your own ratings"
     rater_id = auth.uid()
     and exists (select 1 from public.games g where g.id = game_id and public.can_rate(g, auth.uid(), target))
   );
+
+-- ============ Friends ============
+create table if not exists public.friendships (
+  id uuid primary key default gen_random_uuid(),
+  requester uuid not null references public.profiles(id) on delete cascade,
+  addressee uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'accepted')),
+  created_at timestamptz not null default now(),
+  check (requester <> addressee)
+);
+-- One friendship per pair, whichever direction it was sent in.
+create unique index if not exists friendships_pair
+  on public.friendships (least(requester, addressee), greatest(requester, addressee));
+
+alter table public.friendships enable row level security;
+
+create policy "see your own friendships"
+  on public.friendships for select to authenticated
+  using (auth.uid() in (requester, addressee));
+create policy "send a friend request"
+  on public.friendships for insert to authenticated
+  with check (requester = auth.uid() and status = 'pending');
+create policy "accept a request sent to you"
+  on public.friendships for update to authenticated
+  using (addressee = auth.uid()) with check (addressee = auth.uid());
+create policy "remove or decline a friendship"
+  on public.friendships for delete to authenticated
+  using (auth.uid() in (requester, addressee));
 
 -- ============ Profile pictures ============
 insert into storage.buckets (id, name, public)

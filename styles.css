@@ -423,3 +423,59 @@ table.leaders th:first-child, table.leaders td:first-child { padding-left: 16px;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media (min-width: 721px) { #toast { bottom: 28px; } body { padding-bottom: 0; } }
+
+/* ---------- Social login ---------- */
+.social { display: grid; gap: 10px; }
+.social-btn { width: 100%; padding: 13px 18px; font-size: 15px; background: var(--text); color: #15181d; border-color: var(--text); }
+.social-btn:hover { background: #fff; }
+.social-btn.on { outline: 2px solid var(--lime); }
+.social-btn.soon { background: var(--card2); color: var(--muted); border-color: var(--line); }
+.soon-note { margin: 8px 0 0; }
+.or { display: flex; align-items: center; gap: 12px; margin: 20px 0 14px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.wordmark.sm { font-size: clamp(40px, 8vw, 56px); }
+.setup-photo { display: flex; align-items: center; gap: 18px; margin-bottom: 6px; }
+
+/* ---------- Friends ---------- */
+.scope { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; flex: none; }
+.scope button { padding: 8px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: 700 14px var(--body); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.scope button.on { background: var(--card2); color: var(--text); }
+.scope.wide { display: flex; margin-bottom: 14px; overflow-x: auto; }
+.scope.wide button { flex: 1; justify-content: center; white-space: nowrap; }
+.count.red { background: var(--red); color: #fff; }
+.feed-controls { display: flex; gap: 12px; align-items: center; margin-top: 26px; min-width: 0; }
+.feed-controls .chips { min-width: 0; }
+@media (max-width: 640px) { .feed-controls { flex-direction: column; align-items: stretch; } .feed-controls .scope { display: flex; } .feed-controls .scope button { flex: 1; justify-content: center; } }
+.me-card + .chips { margin-top: 22px; }
+.nudge { flex-basis: 100%; padding: 12px 14px; border-radius: 12px; background: rgba(198, 255, 61, .07); border: 1px solid rgba(198, 255, 61, .25); }
+.nudge b { color: var(--lime); }
+.pcard { flex-direction: column; align-items: stretch; gap: 12px; }
+.pc-link { display: flex; align-items: center; gap: 14px; }
+.pc-actions { display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
+.btn-pair { display: inline-flex; gap: 8px; }
+.friend-on { color: var(--lime); }
+.ftag { font-style: normal; font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--lime); background: rgba(198, 255, 61, .1); padding: 1px 6px; border-radius: 5px; margin-left: 4px; }
+.ph-actions { margin-top: 12px; }
+.photo-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.friend-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.friend-row a { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 56px; }
+.friend-row small { font-size: 11.5px; color: var(--muted); max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-pill.up { background: var(--card2); font-size: 14px; }
+
+/* ---------- Highlights strip ---------- */
+.hl-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.hl { flex: none; width: 116px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); text-align: center; position: relative; }
+.hl:hover { border-color: #3a4352; }
+.hl .badge { position: absolute; top: 10px; right: 10px; }
+.hl small { font-size: 11px; }
+
+/* ---------- 0.1 rating slider ---------- */
+.slider-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.slider-row input[type="range"] { flex: 1; margin: 0; }
+.nudge-btn { width: 34px; height: 34px; flex: none; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--text); font: 800 18px var(--body); cursor: pointer; display: grid; place-items: center; }
+.nudge-btn:hover { border-color: var(--lime); }
+.nudge-btn:active { transform: scale(.94); }
+@media (max-width: 720px) {
+  .nav a .dot { top: -4px; right: -6px; min-width: 16px; height: 16px; font-size: 10px; }
+  .scope.wide button { padding: 8px 8px; font-size: 13px; }
+}

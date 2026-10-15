@@ -10,6 +10,9 @@
 //            status:"open"|"ready"|"final", teamA:team, teamB:team|null,
 //            ref:{ userId:string|null, name:string }|null, stats:{ playerId:{...} } }
 //   rating { id, gameId, raterId, target: playerId | "ref", score, note }
+//   friendship { id, from, to, status:"pending"|"accepted", createdAt }
+//
+// Sign-in: username/password (demo) or email/password, Google and phone codes (Supabase).
 
 const uid = () =>
   crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -71,7 +74,16 @@ class LocalStore {
       this.db = await seedData();
       this.#save();
     }
+    if (!this.db.friends) {
+      this.db.friends = seedFriends(this.db.users);
+      this.#save();
+    }
   }
+  get supportsSocialLogin() { return false; }
+  async signInWithGoogle() { throw new Error("Google sign-in turns on once the shared league database is connected (see README)."); }
+  async sendPhoneCode() { throw new Error("Phone sign-in turns on once the shared league database is connected (see README)."); }
+  async verifyPhoneCode() { throw new Error("Phone sign-in isn't available in demo mode."); }
+  async completeSetup() {}
 
   /* auth */
   async currentUser() {
@@ -154,9 +166,35 @@ class LocalStore {
     this.#save();
   }
 
+  /* friends */
+  async listFriendships() { return structuredClone(this.db.friends); }
+  async requestFriend(from, to) {
+    if (from === to) throw new Error("You can't add yourself.");
+    const ex = this.db.friends.find((f) => (f.from === from && f.to === to) || (f.from === to && f.to === from));
+    if (ex) {
+      if (ex.status === "pending" && ex.to === from) ex.status = "accepted"; // they already asked you
+      this.#save();
+      return;
+    }
+    this.db.friends.push({ id: uid(), from, to, status: "pending", createdAt: new Date().toISOString() });
+    this.#save();
+  }
+  async respondFriend(id, accept) {
+    const f = this.db.friends.find((x) => x.id === id);
+    if (!f) return;
+    if (accept) f.status = "accepted";
+    else this.db.friends = this.db.friends.filter((x) => x.id !== id);
+    this.#save();
+  }
+  async removeFriend(id) {
+    this.db.friends = this.db.friends.filter((x) => x.id !== id);
+    this.#save();
+  }
+
   /* demo-only helpers */
   async reset(withDemo) {
-    this.db = withDemo ? await seedData() : { version: 2, users: [], games: [], ratings: [] };
+    this.db = withDemo ? await seedData() : { version: 2, users: [], games: [], ratings: [], friends: [] };
+    if (withDemo) this.db.friends = seedFriends(this.db.users);
     this.#save();
     await this.signOut();
   }
@@ -174,14 +212,35 @@ class SupabaseStore {
   }
   async init() {
     const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
-    this.sb = createClient(this.url, this.key);
+    this.sb = createClient(this.url, this.key, { auth: { flowType: "pkce", detectSessionInUrl: true, persistSession: true } });
+    // Finish a Google redirect (?code=...) before the app reads the session, then tidy the URL.
+    await this.sb.auth.getSession();
+    if (new URLSearchParams(location.search).has("code")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
+  }
+  get supportsSocialLogin() { return true; }
+  async signInWithGoogle() {
+    this.#ok(await this.sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } }));
+  }
+  async sendPhoneCode(phone) {
+    this.#ok(await this.sb.auth.signInWithOtp({ phone: phone.trim() }));
+  }
+  async verifyPhoneCode(phone, token) {
+    this.#ok(await this.sb.auth.verifyOtp({ phone: phone.trim(), token: token.trim(), type: "sms" }));
+    return this.currentUser();
+  }
+  async completeSetup(id, { username, displayName }) {
+    username = username.trim().toLowerCase();
+    if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers, _ or .");
+    const taken = this.#ok(await this.sb.from("profiles").select("id").eq("username", username).neq("id", id));
+    if (taken.length) throw new Error("That username is taken.");
+    this.#ok(await this.sb.from("profiles").update({ username, display_name: displayName.trim() || username, onboarded: true }).eq("id", id));
   }
   #ok({ data, error }) {
     if (error) throw new Error(error.message);
     return data;
   }
   #user(r) {
-    return { id: r.id, username: r.username, displayName: r.display_name, avatar: r.avatar_url, color: r.color };
+    return { id: r.id, username: r.username, displayName: r.display_name, avatar: r.avatar_url, color: r.color, needsSetup: r.onboarded === false };
   }
   #game(r) {
     return {
@@ -288,6 +347,33 @@ class SupabaseStore {
     );
   }
 }
+
+SupabaseStore.prototype.listFriendships = async function () {
+  const { data, error } = await this.sb.from("friendships").select("*");
+  if (error) throw new Error(error.message);
+  return data.map((r) => ({ id: r.id, from: r.requester, to: r.addressee, status: r.status, createdAt: r.created_at }));
+};
+SupabaseStore.prototype.requestFriend = async function (from, to) {
+  if (from === to) throw new Error("You can't add yourself.");
+  const existing = (await this.listFriendships()).find((f) => (f.from === from && f.to === to) || (f.from === to && f.to === from));
+  if (existing) {
+    if (existing.status === "pending" && existing.to === from) return this.respondFriend(existing.id, true);
+    return;
+  }
+  const { error } = await this.sb.from("friendships").insert({ requester: from, addressee: to });
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.respondFriend = async function (id, accept) {
+  const q = accept
+    ? this.sb.from("friendships").update({ status: "accepted" }).eq("id", id)
+    : this.sb.from("friendships").delete().eq("id", id);
+  const { error } = await q;
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.removeFriend = async function (id) {
+  const { error } = await this.sb.from("friendships").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+};
 
 export function createStore() {
   const cfg = window.BUT_CONFIG || {};
@@ -417,4 +503,19 @@ async function seedData() {
   });
 
   return { version: 2, users, games, ratings };
+}
+
+function seedFriends(users) {
+  const U = Object.fromEntries(users.map((u) => [u.username, u.id]));
+  const out = [];
+  const add = (a, b, status = "accepted") => {
+    if (U[a] && U[b]) out.push({ id: uid(), from: U[a], to: U[b], status, createdAt: new Date().toISOString() });
+  };
+  // A friend group around Marcus and Jay, plus a couple of open requests to show the flow.
+  for (const b of ["dre", "sofia", "jay", "luis", "nina"]) add("marcus", b);
+  for (const b of ["dre", "kev", "tasha", "benji"]) add("jay", b);
+  add("sofia", "nina"); add("dre", "kev"); add("tasha", "nina");
+  add("omar", "marcus", "pending");
+  add("rico", "jay", "pending");
+  return out;
 }

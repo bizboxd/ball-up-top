@@ -27,11 +27,20 @@ const sportOf = (g) => SPORTS[g.sport] || SPORTS.other;
    ============================================================ */
 
 const store = createStore();
-const state = { me: null, users: [], games: [], ratings: [], feedFilter: "all", leadersSport: "all", authTab: "login" };
+const state = {
+  me: null, users: [], games: [], ratings: [], friendships: [],
+  feedFilter: "all", feedScope: "friends", leadersSport: "all", squadTab: "friends",
+  authTab: "login", phone: { number: "", sent: false },
+};
 
 async function reload() {
-  const [me, users, games, ratings] = await Promise.all([store.currentUser(), store.listUsers(), store.listGames(), store.listRatings()]);
-  Object.assign(state, { me, users, games, ratings });
+  const me = await store.currentUser();
+  if (!me) {
+    Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [] });
+    return;
+  }
+  const [users, games, ratings, friendships] = await Promise.all([store.listUsers(), store.listGames(), store.listRatings(), store.listFriendships()]);
+  Object.assign(state, { me, users, games, ratings, friendships });
 }
 
 /* ============================================================
@@ -46,6 +55,55 @@ const uname = (id) => user(id)?.displayName ?? "Unknown";
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const fmt = (n, d = 1) => (n == null || Number.isNaN(n) ? "–" : Number(n).toFixed(d));
 const meId = () => state.me?.id;
+
+/* ---------- Friends ---------- */
+function friendLink(otherId) {
+  return state.friendships.find((f) => (f.from === meId() && f.to === otherId) || (f.to === meId() && f.from === otherId));
+}
+function friendStatus(otherId) {
+  const f = friendLink(otherId);
+  if (!f) return "none";
+  if (f.status === "accepted") return "friends";
+  return f.from === meId() ? "outgoing" : "incoming";
+}
+const friendIds = () =>
+  new Set(state.friendships.filter((f) => f.status === "accepted" && (f.from === meId() || f.to === meId())).map((f) => (f.from === meId() ? f.to : f.from)));
+const incomingRequests = () => state.friendships.filter((f) => f.status === "pending" && f.to === meId());
+const gamePlayers = (g) => [...g.teamA.playerIds, ...(g.teamB?.playerIds || [])];
+
+function friendButton(id, size = "") {
+  if (!state.me || id === meId()) return "";
+  const st = friendStatus(id);
+  const f = friendLink(id);
+  if (st === "friends") return `<button class="btn ghost ${size} friend-on" data-unfriend="${f.id}">✓ Friends</button>`;
+  if (st === "outgoing") return `<button class="btn ghost ${size}" data-cancel="${f.id}">Requested · Cancel</button>`;
+  if (st === "incoming") return `<span class="btn-pair"><button class="btn primary ${size}" data-accept="${f.id}">Accept</button><button class="btn ghost ${size}" data-decline="${f.id}">Decline</button></span>`;
+  return `<button class="btn ${size}" data-addfriend="${id}">＋ Add friend</button>`;
+}
+
+function bindFriendButtons(root = document) {
+  const run = (el, fn, msg) => el.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    act(el, async () => { await fn(); await reload(); render(); if (msg) toast(msg); });
+  });
+  $$("[data-addfriend]", root).forEach((b) => run(b, () => store.requestFriend(meId(), b.dataset.addfriend), "Friend request sent"));
+  $$("[data-accept]", root).forEach((b) => run(b, () => store.respondFriend(b.dataset.accept, true), "You're friends now"));
+  $$("[data-decline]", root).forEach((b) => run(b, () => store.respondFriend(b.dataset.decline, false), "Request declined"));
+  $$("[data-cancel]", root).forEach((b) => run(b, () => store.removeFriend(b.dataset.cancel), "Request cancelled"));
+  $$("[data-unfriend]", root).forEach((b) => b.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (b.dataset.armed) {
+      act(b, async () => { await store.removeFriend(b.dataset.unfriend); await reload(); render(); toast("Removed from friends"); });
+    } else {
+      b.dataset.armed = "1";
+      b.textContent = "Tap again to remove";
+      b.classList.add("danger");
+      setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = "✓ Friends"; b.classList.remove("danger"); } }, 3000);
+    }
+  }));
+}
 
 function localDate(d = new Date()) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -391,17 +449,31 @@ function sparkline(values) {
 function viewAuth() {
   const shared = store.mode === "shared";
   const login = state.authTab === "login";
-  return `
-  <div class="auth" style="--img:url('${IMG.ball}')">
-    <div class="auth-panel">
-      <img class="auth-logo" src="${IMG.icon}" alt="">
-      <h1 class="wordmark">BALL UP TOP</h1>
-      <p class="muted">Log the run. Rate your teammates. Find out who's really cooking.</p>
-      <div class="tabs">
-        <button class="${login ? "on" : ""}" data-tab="login">Log in</button>
-        <button class="${!login ? "on" : ""}" data-tab="signup">Create account</button>
+  const phoneMode = state.authTab === "phone";
+  const social = `
+      <div class="social">
+        <button type="button" class="btn social-btn ${shared ? "" : "soon"}" id="google-btn">
+          <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+          Continue with Google</button>
+        <button type="button" class="btn social-btn ${shared ? "" : "soon"} ${phoneMode ? "on" : ""}" id="phone-btn">📱 Continue with phone</button>
       </div>
-      <form id="auth-form" class="stack">
+      ${shared ? "" : `<p class="muted small soon-note">Google and phone sign-in switch on once your league database is connected. In demo mode, use a username.</p>`}`;
+
+  let form;
+  if (phoneMode) {
+    form = state.phone.sent
+      ? `<form id="phone-form" class="stack">
+           <p class="muted small">We texted a 6-digit code to <b>${esc(state.phone.number)}</b>.</p>
+           <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
+           <button class="btn primary block big">Verify and log in</button>
+           <button type="button" class="btn ghost small" id="phone-back">Use a different number</button>
+         </form>`
+      : `<form id="phone-form" class="stack">
+           <label>Phone number<input name="phone" type="tel" autocomplete="tel" placeholder="+1 401 555 0123" required value="${esc(state.phone.number)}"></label>
+           <button class="btn primary block big">Text me a code</button>
+         </form>`;
+  } else {
+    form = `<form id="auth-form" class="stack">
         ${login
           ? `<label>${shared ? "Email" : "Username"}<input name="login" ${shared ? 'type="email"' : ""} autocomplete="username" required></label>
              <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
@@ -410,9 +482,24 @@ function viewAuth() {
              <label>Username<input name="username" autocomplete="username" placeholder="e.g. jaybuckets" required pattern="[A-Za-z0-9_.]{3,20}"></label>
              <label>Display name<input name="displayName" placeholder="What the squad calls you" required></label>
              <label>Password<input name="password" type="password" autocomplete="new-password" minlength="6" required></label>
-             <label class="file-label">Profile pic <span class="muted small">(optional)</span><input name="photo" type="file" accept="image/*"></label>
+             <label class="file-label">Profile pic <span class="muted small">(optional, you can add it later)</span><input name="photo" type="file" accept="image/*"></label>
              <button class="btn primary block big">Create account</button>`}
-      </form>
+      </form>`;
+  }
+
+  return `
+  <div class="auth" style="--img:url('${IMG.ball}')">
+    <div class="auth-panel">
+      <img class="auth-logo" src="${IMG.icon}" alt="">
+      <h1 class="wordmark">BALL UP TOP</h1>
+      <p class="muted">Log the run. Rate your teammates. Find out who's really cooking.</p>
+      ${social}
+      <div class="or"><span>or ${shared ? "use email" : "use a username"}</span></div>
+      <div class="tabs">
+        <button class="${login ? "on" : ""}" data-tab="login">Log in</button>
+        <button class="${state.authTab === "signup" ? "on" : ""}" data-tab="signup">Create account</button>
+      </div>
+      ${form}
       ${shared ? "" : `<p class="demo-note"><b>Demo mode.</b> Accounts live in this browser only. Try <code>marcus</code> / <code>demo123</code>, or create your own.</p>`}
     </div>
   </div>`;
@@ -420,7 +507,39 @@ function viewAuth() {
 
 function bindAuth() {
   $$("[data-tab]").forEach((b) => b.addEventListener("click", () => { state.authTab = b.dataset.tab; render(); }));
-  $("#auth-form").addEventListener("submit", (e) => {
+  const afterLogin = async () => {
+    await reload();
+    location.hash = "#/";
+    render();
+    if (state.me && !state.me.needsSetup) toast(`Welcome, ${state.me.displayName}`);
+  };
+  // In shared mode this redirects to Google; in demo mode it explains why it's off.
+  $("#google-btn").addEventListener("click", (e) => act(e.currentTarget, () => store.signInWithGoogle()));
+  $("#phone-btn").addEventListener("click", () => {
+    if (!store.supportsSocialLogin) return toast("Phone sign-in switches on once the league database is connected (see README).");
+    state.authTab = "phone";
+    render();
+  });
+  $("#phone-back")?.addEventListener("click", () => { state.phone.sent = false; render(); });
+  $("#phone-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    act($("button", f), async () => {
+      if (!state.phone.sent) {
+        const num = f.phone.value.replace(/[^\d+]/g, "");
+        if (!/^\+\d{8,15}$/.test(num)) throw new Error("Include your country code, e.g. +1 401 555 0123");
+        await store.sendPhoneCode(num);
+        state.phone = { number: num, sent: true };
+        render();
+        toast("Code sent");
+      } else {
+        await store.verifyPhoneCode(state.phone.number, f.code.value);
+        state.phone = { number: "", sent: false };
+        await afterLogin();
+      }
+    });
+  });
+  $("#auth-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
     act($("button", f), async () => {
@@ -434,6 +553,42 @@ function bindAuth() {
           try { await store.uploadAvatar(u.id, f.photo.files[0]); } catch (err) { toast(err.message); }
         }
       }
+      await afterLogin();
+    });
+  });
+}
+
+/* First login with Google or phone: pick a username and add a photo. */
+function viewSetup() {
+  const u = state.me;
+  return `
+  <div class="auth" style="--img:url('${IMG.ball}')">
+    <div class="auth-panel">
+      <h1 class="wordmark sm">You're in.</h1>
+      <p class="muted">Pick the name your squad will see.</p>
+      <form id="setup-form" class="stack">
+        <div class="setup-photo">${avatar(u.id, "xxl")}
+          <label class="btn">📷 ${u.avatar ? "Change photo" : "Add a profile pic"}<input type="file" id="setup-photo" accept="image/*" hidden></label></div>
+        <label>Username<input name="username" required pattern="[A-Za-z0-9_.]{3,20}" value="${esc(u.username)}" autocomplete="username"></label>
+        <label>Display name<input name="displayName" required maxlength="30" value="${esc(u.displayName === "Player" ? "" : u.displayName)}" placeholder="What the squad calls you"></label>
+        <button class="btn primary block big">Let's ball</button>
+        <button type="button" class="btn ghost small" id="setup-out">Log out</button>
+      </form>
+    </div>
+  </div>`;
+}
+
+function bindSetup() {
+  $("#setup-photo").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) act(null, async () => { await store.uploadAvatar(meId(), file); await reload(); render(); });
+  });
+  $("#setup-out").addEventListener("click", async () => { await store.signOut(); await reload(); render(); });
+  $("#setup-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    act($("button", f), async () => {
+      await store.completeSetup(meId(), { username: f.username.value, displayName: f.displayName.value });
       await reload();
       location.hash = "#/";
       render();
@@ -448,12 +603,25 @@ function bindAuth() {
 
 function viewFeed() {
   const idx = ratingIndex();
-  const games = state.games.filter((g) => state.feedFilter === "all" || g.sport === state.feedFilter);
-  const open = games.filter((g) => g.status === "open").sort((a, b) => a.date.localeCompare(b.date));
+  const friends = friendIds();
+  const inScope = (g) => state.feedScope === "all" || gamePlayers(g).some((p) => p === meId() || friends.has(p)) || g.createdBy === meId();
+  const games = state.games.filter((g) => (state.feedFilter === "all" || g.sport === state.feedFilter) && inScope(g));
+  const open = state.games.filter((g) => g.status === "open" && (state.feedFilter === "all" || g.sport === state.feedFilter)).sort((a, b) => a.date.localeCompare(b.date));
   const upcoming = games.filter((g) => g.status === "ready").sort((a, b) => a.date.localeCompare(b.date));
   const results = games.filter((g) => g.status === "final").sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const sum = playerSummary(meId());
   const pending = pendingGames();
+  const requests = incomingRequests();
+
+  // Highlights: the best individual performances in the games you can see.
+  const highlights = [];
+  for (const g of results.slice(0, 12)) {
+    for (const pid of gamePlayers(g)) {
+      const r = ratingFor(idx, g.id, pid);
+      if (r != null && r >= 8) highlights.push({ g, pid, r, motm: motm(idx, g)?.playerId === pid });
+    }
+  }
+  highlights.sort((a, b) => b.r - a.r);
 
   return `
   <section class="hero" style="--img:url('${IMG.hero}')">
@@ -471,19 +639,38 @@ function viewFeed() {
       <span class="muted small">${sum.games.length} games · ${sum.wins}W ${sum.losses}L${sum.draws ? " " + sum.draws + "D" : ""} · ${sum.motms}× MOTM</span></div>
     </a>
     ${badge(sum.avg, "xl")}
+    ${!state.me.avatar ? `<a class="nudge" href="#/p/${meId()}">📷 Add a profile pic so the squad knows who's who. <b>Add photo →</b></a>` : ""}
     ${pending.length ? `<a class="pending" href="#/g/${pending[0].id}">⏳ ${pending.length} game${pending.length > 1 ? "s" : ""} waiting on your ratings. <b>Rate now →</b></a>` : ""}
+    ${requests.length ? `<a class="nudge" href="#/squad">👋 ${requests.length} friend request${requests.length > 1 ? "s" : ""}. <b>See ${requests.length > 1 ? "them" : "it"} →</b></a>` : ""}
   </section>
 
-  ${sportChips(state.feedFilter, "feed")}
+  ${highlights.length ? `
+  <div class="section-head"><h3>Highlights</h3><span class="muted small">8.0+ performances</span></div>
+  <div class="hl-strip">${highlights.slice(0, 10).map((h) => `
+    <a class="hl" href="#/g/${h.g.id}">
+      ${avatar(h.pid, "lg")}${badge(h.r)}
+      <b>${esc(uname(h.pid).split(" ")[0])}</b>
+      <small class="muted">${sportOf(h.g).icon} ${h.motm ? "MOTM · " : ""}${esc(relDate(h.g.date))}</small>
+    </a>`).join("")}</div>` : ""}
+
+  <div class="feed-controls">
+    <div class="scope">
+      <button class="${state.feedScope === "friends" ? "on" : ""}" data-scope="friends">Friends</button>
+      <button class="${state.feedScope === "all" ? "on" : ""}" data-scope="all">Everyone</button>
+    </div>
+    ${sportChips(state.feedFilter, "feed")}
+  </div>
 
   ${open.length ? `<div class="section-head"><h3>Open runs</h3><span class="muted small">Needs a second captain</span></div><div class="grid">${open.map((g) => gameCard(g, idx)).join("")}</div>` : ""}
   ${upcoming.length ? `<div class="section-head"><h3>Upcoming</h3></div><div class="grid">${upcoming.map((g) => gameCard(g, idx)).join("")}</div>` : ""}
   <div class="section-head"><h3>Results</h3></div>
-  <div class="grid">${results.map((g) => gameCard(g, idx)).join("") || `<div class="empty">No results yet. <a href="#/new">Start a game.</a></div>`}</div>`;
+  <div class="grid">${results.map((g) => gameCard(g, idx)).join("") ||
+    `<div class="empty">${state.feedScope === "friends" ? `No games from you or your friends yet. <a href="#/squad">Add friends</a> or <a href="#/new">start a game</a>.` : `No results yet. <a href="#/new">Start a game.</a>`}</div>`}</div>`;
 }
 
 function bindFeed() {
   $$("[data-feed]").forEach((b) => b.addEventListener("click", () => { state.feedFilter = b.dataset.feed; render(); }));
+  $$("[data-scope]").forEach((b) => b.addEventListener("click", () => { state.feedScope = b.dataset.scope; render(); }));
 }
 
 /* ============================================================
@@ -522,7 +709,9 @@ function viewEditor() {
   const other = kind === "create" ? null : teamObj(state.games.find((x) => x.id === editor.gameId), editor.side === "A" ? "B" : "A");
   const refUserId = kind === "create" ? (game.refMode === "user" ? game.refUser : null) : game.ref?.userId;
   const taken = new Set([...(other?.playerIds || []), ...(refUserId ? [refUserId] : [])]);
-  const pool = state.users.filter((u) => !taken.has(u.id));
+  const friends = friendIds();
+  const rank = (u) => (u.id === team.captainId ? 0 : friends.has(u.id) ? 1 : 2);
+  const pool = state.users.filter((u) => !taken.has(u.id)).sort((a, b) => rank(a) - rank(b) || a.displayName.localeCompare(b.displayName));
   const title = kind === "create" ? "Start a game" : kind === "join" ? "Captain the other side" : "Edit your team";
 
   const gameFields =
@@ -590,7 +779,7 @@ function viewEditor() {
           const on = team.playerIds.includes(u.id);
           const isCap = u.id === team.captainId;
           return `<button type="button" class="pick ${on ? "on" : ""}" data-pick="${u.id}" data-name="${esc((u.displayName + " " + u.username).toLowerCase())}" ${isCap ? "disabled" : ""}>
-            ${avatar(u.id, "sm")}<span>${esc(u.displayName)}${isCap ? " (C)" : ""}</span><i>${on ? "✓" : "+"}</i></button>`;
+            ${avatar(u.id, "sm")}<span>${esc(u.displayName)}${isCap ? " (C)" : ""}${friends.has(u.id) ? ' <em class="ftag">friend</em>' : ""}</span><i>${on ? "✓" : "+"}</i></button>`;
         }).join("")}
       </div>
     </section>
@@ -779,7 +968,7 @@ function viewGame(id) {
       rateBlock = `
       <section class="card">
         <h3>Rate your team${g.ref && g.ref.userId !== meId() ? " + the ref" : ""}</h3>
-        <p class="muted small">You only rate your own side. 6.0 is an average run, 7+ is solid, 8+ is cooking, 9+ means somebody got cooked.</p>
+        <p class="muted small">You only rate your own side. Drag or tap − / + to fine-tune by 0.1. 6.0 is an average run, 7+ is solid, 8+ is cooking, 9+ means somebody got cooked.</p>
         <form id="rate-form" class="rate-list">
           ${targets.map(({ target }) => {
             const mine = state.ratings.find((r) => r.gameId === g.id && r.raterId === meId() && r.target === target);
@@ -791,7 +980,11 @@ function viewGame(id) {
             <div class="rate-row ${isRef ? "is-ref" : ""}">
               ${isRef ? (g.ref.userId ? avatar(g.ref.userId) : `<span class="avatar whistle">🟨</span>`) : avatar(target)}
               <div class="grow"><b>${esc(name)}</b><small class="muted">${esc(sub)}</small>
-                <input type="range" min="1" max="10" step="0.5" value="${v}" data-target="${target}" aria-label="Rating for ${esc(name)}">
+                <div class="slider-row">
+                  <button type="button" class="nudge-btn" data-nudge="-0.1" data-t="${target}" aria-label="Lower ${esc(name)} by 0.1">−</button>
+                  <input type="range" min="1" max="10" step="0.1" value="${v}" data-target="${target}" aria-label="Rating for ${esc(name)}">
+                  <button type="button" class="nudge-btn" data-nudge="0.1" data-t="${target}" aria-label="Raise ${esc(name)} by 0.1">+</button>
+                </div>
               </div>
               <span class="badge ${ratingClass(v)} live" data-for="${target}">${fmt(v)}</span>
             </div>`;
@@ -844,6 +1037,12 @@ function bindGame(id) {
       b.textContent = fmt(v);
       b.className = `badge ${ratingClass(v)} live`;
     }));
+    $$("[data-nudge]", form).forEach((btn) => btn.addEventListener("click", () => {
+      const inp = $(`input[data-target="${btn.dataset.t}"]`, form);
+      const v = Math.min(10, Math.max(1, Math.round((Number(inp.value) + Number(btn.dataset.nudge)) * 10) / 10));
+      inp.value = v;
+      inp.dispatchEvent(new Event("input"));
+    }));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const g = state.games.find((x) => x.id === id);
@@ -851,7 +1050,7 @@ function bindGame(id) {
       act($("button[type=submit]", form), async () => {
         const list = $$('input[type="range"]', form)
           .filter((i) => allowed.has(i.dataset.target))
-          .map((i) => ({ gameId: id, raterId: meId(), target: i.dataset.target, score: Number(i.value) }));
+          .map((i) => ({ gameId: id, raterId: meId(), target: i.dataset.target, score: Math.round(Number(i.value) * 10) / 10 }));
         await store.upsertRatings(list);
         await reload();
         render();
@@ -927,27 +1126,50 @@ function bindResult(id) {
    Squad & profiles
    ============================================================ */
 
+function playerCard(u, s) {
+  return `
+    <div class="card pcard" data-name="${esc((u.displayName + " " + u.username).toLowerCase())}">
+      <a class="pc-link" href="#/p/${u.id}">
+        ${avatar(u.id, "lg")}
+        <div class="grow"><b>${esc(u.displayName)}${u.id === meId() ? ' <em class="ftag">you</em>' : ""}</b><small class="muted">@${esc(u.username)} · ${s.games.length} games · ${s.motms}× MOTM</small>
+        <div class="form">${s.games.slice(0, 5).reverse().map((x) => `<span class="fdot ${ratingClass(x.rating)}" title="${fmt(x.rating)}"></span>`).join("")}</div></div>
+        ${badge(s.avg, "lg")}
+      </a>
+      ${u.id !== meId() ? `<div class="pc-actions">${friendButton(u.id, "small")}</div>` : ""}
+    </div>`;
+}
+
 function viewSquad() {
-  const rows = state.users
+  const friends = friendIds();
+  const requests = incomingRequests();
+  const tab = state.squadTab === "requests" && !requests.length ? "friends" : state.squadTab;
+  let list = state.users;
+  if (tab === "friends") list = state.users.filter((u) => friends.has(u.id) || u.id === meId());
+  if (tab === "requests") list = requests.map((f) => user(f.from)).filter(Boolean);
+  const rows = list
     .map((u) => ({ u, s: playerSummary(u.id) }))
     .sort((a, b) => (b.s.avg ?? -1) - (a.s.avg ?? -1) || b.s.games.length - a.s.games.length);
+  const outgoing = state.friendships.filter((f) => f.status === "pending" && f.from === meId());
   return `
   <h1 class="page-title">The squad</h1>
-  <input class="search block" id="sq-search" placeholder="Search players">
-  <div class="grid players">${rows.map(({ u, s }) => `
-    <a class="card pcard" href="#/p/${u.id}" data-name="${esc((u.displayName + " " + u.username).toLowerCase())}">
-      ${avatar(u.id, "lg")}
-      <div class="grow"><b>${esc(u.displayName)}</b><small class="muted">@${esc(u.username)} · ${s.games.length} games · ${s.motms}× MOTM</small>
-      <div class="form">${s.games.slice(0, 5).reverse().map((x) => `<span class="fdot ${ratingClass(x.rating)}" title="${fmt(x.rating)}"></span>`).join("")}</div></div>
-      ${badge(s.avg, "lg")}
-    </a>`).join("")}</div>`;
+  <div class="scope wide">
+    <button class="${tab === "friends" ? "on" : ""}" data-sq="friends">Friends <span class="count">${friends.size}</span></button>
+    ${requests.length ? `<button class="${tab === "requests" ? "on" : ""}" data-sq="requests">Requests <span class="count red">${requests.length}</span></button>` : ""}
+    <button class="${tab === "everyone" ? "on" : ""}" data-sq="everyone">Find players</button>
+  </div>
+  <input class="search block" id="sq-search" placeholder="${tab === "everyone" ? "Search by name or @username" : "Search"}">
+  ${tab === "friends" && friends.size === 0 ? `<div class="empty">No friends yet. Tap <b>Find players</b> to add the people you run with.</div>` : ""}
+  <div class="grid players">${rows.map(({ u, s }) => playerCard(u, s)).join("")}</div>
+  ${tab === "friends" && outgoing.length ? `<p class="muted small center">Waiting on ${outgoing.length} request${outgoing.length > 1 ? "s" : ""} you sent.</p>` : ""}`;
 }
 
 function bindSquad() {
+  $$("[data-sq]").forEach((b) => b.addEventListener("click", () => { state.squadTab = b.dataset.sq; render(); }));
   $("#sq-search").addEventListener("input", (e) => {
-    const q = e.target.value.trim().toLowerCase();
+    const q = e.target.value.trim().toLowerCase().replace(/^@/, "");
     $$(".pcard").forEach((c) => (c.hidden = q && !c.dataset.name.includes(q)));
   });
+  bindFriendButtons($("#main"));
 }
 
 function viewProfile(id) {
@@ -956,6 +1178,17 @@ function viewProfile(id) {
   const s = playerSummary(id);
   const mine = id === meId();
   const trend = s.games.filter((x) => x.rating != null).map((x) => x.rating).reverse();
+  const theirFriends = state.friendships
+    .filter((f) => f.status === "accepted" && (f.from === id || f.to === id))
+    .map((f) => (f.from === id ? f.to : f.from));
+  const comingUp = state.games
+    .filter((g) => g.status !== "final" && (gamePlayers(g).includes(id) || g.ref?.userId === id))
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let together = null;
+  if (!mine) {
+    const shared = state.games.filter((g) => g.status === "final" && teamOf(g, id) && teamOf(g, meId()));
+    together = { total: shared.length, same: shared.filter((g) => teamOf(g, id) === teamOf(g, meId())).length };
+  }
   const sportRows = Object.entries(s.bySport).map(([sp, d]) => {
     const cfg = SPORTS[sp] || SPORTS.other;
     return `<div class="sport-block">
@@ -971,11 +1204,13 @@ function viewProfile(id) {
       ${mine ? `<label class="photo-btn" title="Change profile pic">📷<input type="file" id="avatar-file" accept="image/*" hidden></label>` : ""}</div>
     <div class="grow">
       <h1>${esc(u.displayName)}</h1>
-      <div class="muted">@${esc(u.username)}</div>
+      <div class="muted">@${esc(u.username)}${together && together.total ? ` · You've played ${together.total} game${together.total > 1 ? "s" : ""} together (${together.same} as teammates)` : ""}</div>
+      ${mine ? "" : `<div class="ph-actions">${friendButton(id)}</div>`}
       <div class="ph-stats">
         <div><b>${s.games.length}</b><small>Games</small></div>
         <div><b>${s.wins}-${s.losses}${s.draws ? "-" + s.draws : ""}</b><small>W-L${s.draws ? "-D" : ""}</small></div>
         <div><b>${s.motms}</b><small>MOTM</small></div>
+        <div><b>${theirFriends.length}</b><small>Friends</small></div>
         ${s.reffed ? `<div><b>${fmt(s.refAvg)}</b><small>Ref rating (${s.reffed})</small></div>` : ""}
       </div>
     </div>
@@ -985,6 +1220,9 @@ function viewProfile(id) {
   ${mine ? `
   <section class="card">
     <h3>Your account</h3>
+    <div class="photo-row">${avatar(id, "lg")}
+      <label class="btn">📷 ${u.avatar ? "Change profile pic" : "Upload a profile pic"}<input type="file" id="avatar-file-2" accept="image/*" hidden></label>
+      <span class="muted small">Square crop, any photo from your phone works.</span></div>
     <form id="profile-form" class="inline">
       <input id="p-name" value="${esc(u.displayName)}" maxlength="30" aria-label="Display name">
       <button class="btn">Save name</button>
@@ -1005,8 +1243,24 @@ function viewProfile(id) {
     </section>
   </div>
   ${sportRows ? `<section class="card"><h3>By sport</h3>${sportRows}</section>` : ""}
+  ${comingUp.length ? `
   <section class="card">
-    <h3>Game log</h3>
+    <h3>Coming up</h3>
+    ${comingUp.map((g) => `
+      <a class="log-row" href="#/g/${g.id}">
+        <span class="res-pill up">${sportOf(g).icon}</span>
+        <div class="grow"><b>${esc(g.teamA.name)} vs ${g.teamB ? esc(g.teamB.name) : "open spot"}</b>
+        <small class="muted">${esc(relDate(g.date))}${g.time ? " · " + fmtTime(g.time) : ""}${g.location ? " · " + esc(g.location) : ""}${g.ref?.userId === id ? " · Reffing" : captainOf(g, id) ? " · Captain" : ""}</small></div>
+        <span class="status ${g.status}">${g.status === "open" ? "Needs opponent" : "Upcoming"}</span>
+      </a>`).join("")}
+  </section>` : ""}
+  ${theirFriends.length ? `
+  <section class="card">
+    <h3>Friends</h3>
+    <div class="friend-row">${theirFriends.slice(0, 24).map((f) => `<a href="#/p/${f}" title="${esc(uname(f))}">${avatar(f)}<small>${esc(uname(f).split(" ")[0])}</small></a>`).join("")}</div>
+  </section>` : ""}
+  <section class="card">
+    <h3>Past games <span class="muted small">${s.games.length}</span></h3>
     ${s.games.map((x) => `
       <a class="log-row" href="#/g/${x.g.id}">
         <span class="res-pill ${x.res}">${x.res}</span>
@@ -1018,7 +1272,8 @@ function viewProfile(id) {
 }
 
 function bindProfile(id) {
-  $("#avatar-file")?.addEventListener("change", (e) => {
+  bindFriendButtons($("#main"));
+  const uploadPhoto = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     act(null, async () => {
@@ -1027,7 +1282,9 @@ function bindProfile(id) {
       render();
       toast("Looking good");
     });
-  });
+  };
+  $("#avatar-file")?.addEventListener("change", uploadPhoto);
+  $("#avatar-file-2")?.addEventListener("change", uploadPhoto);
   $("#profile-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     act(null, async () => {
@@ -1112,6 +1369,12 @@ function render() {
     bindAuth();
     return;
   }
+  if (state.me.needsSetup) {
+    document.body.classList.add("signed-out");
+    main.innerHTML = viewSetup();
+    bindSetup();
+    return;
+  }
 
   // (Re)start the team editor when entering an editor route.
   const editorKey = route === "new" ? "new" : route === "g" && (sub === "join" || sub === "edit") ? `${param}/${sub}` : null;
@@ -1140,6 +1403,9 @@ function render() {
   const pending = pendingGames().length;
   $("#rate-dot").hidden = !pending;
   $("#rate-dot").textContent = pending;
+  const reqs = incomingRequests().length;
+  $("#squad-dot").hidden = !reqs;
+  $("#squad-dot").textContent = reqs;
 }
 
 let prevRoute = null;
