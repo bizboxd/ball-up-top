@@ -8,7 +8,7 @@
 2. **RSVP.** Anyone can tap *I'm in* or *Can't make it* on an upcoming run. Captains see the people who are in at the top of their player list.
 3. **Second captain claims the other side.** A game needs two captains. Teams don't have to be even (7v8, 4v5, whatever showed up).
 4. **Final whistle.** Either captain posts the score and an optional box score. That opens **24 hours of voting**.
-5. **Ratings.** Every player rates their **own teammates only** (never the other team, never themselves) plus **the ref**, from 1.0 to 10.0 in 0.1 steps.
+5. **Ratings.** Every player rates their **own teammates only** (never the other team, never themselves) plus **the ref**, from 0.1 to 10.0 in 0.1 steps.
 6. **The reveal.** Ratings stay hidden until voting closes, or earlier if every vote is in. A game rating only counts once **at least 2 people** have rated you.
 7. **Man of the match** goes to the highest-rated player across both teams.
 

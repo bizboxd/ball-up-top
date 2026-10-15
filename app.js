@@ -1184,7 +1184,7 @@ function viewGame(id) {
       <section class="panel pad" id="rate">
         ${statusLine}
         <h3>Rate your team${g.ref && g.ref.userId !== meId() ? " and the ref" : ""}</h3>
-        <p class="muted small">You only rate your own side. Drag, or tap the minus and plus to move by 0.1. Around 6.0 is an average run, 7 is solid, 8 is cooking, 9 means somebody got cooked.</p>
+        <p class="muted small">You only rate your own side. Drag, or tap the minus and plus to move by 0.1. Anywhere from 0.1 to 10. Around 6.0 is an average run, 7 is solid, 8 is cooking, 9 means somebody got cooked.</p>
         <form id="rate-form" class="rate-list">
           ${targets.map(({ target }) => {
             const mine = myVote(g, target);
@@ -1198,7 +1198,7 @@ function viewGame(id) {
               <div class="grow"><b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}
                 <div class="slider-row">
                   <button type="button" class="nudge-btn" data-nudge="-0.1" data-t="${target}" aria-label="Lower ${esc(name)} by 0.1">−</button>
-                  <input type="range" min="1" max="10" step="0.1" value="${v}" data-target="${target}" aria-label="Rating for ${esc(name)}">
+                  <input type="range" min="0.1" max="10" step="0.1" value="${v}" data-target="${target}" aria-label="Rating for ${esc(name)}">
                   <button type="button" class="nudge-btn" data-nudge="0.1" data-t="${target}" aria-label="Raise ${esc(name)} by 0.1">+</button>
                 </div>
               </div>
@@ -1294,7 +1294,7 @@ function bindGame(id) {
     }));
     $$("[data-nudge]", form).forEach((btn) => btn.addEventListener("click", () => {
       const inp = $(`input[data-target="${btn.dataset.t}"]`, form);
-      inp.value = Math.min(10, Math.max(1, Math.round((Number(inp.value) + Number(btn.dataset.nudge)) * 10) / 10));
+      inp.value = Math.min(10, Math.max(0.1, Math.round((Number(inp.value) + Number(btn.dataset.nudge)) * 10) / 10));
       inp.dispatchEvent(new Event("input"));
     }));
     form.addEventListener("submit", (e) => {

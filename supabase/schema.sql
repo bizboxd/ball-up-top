@@ -110,11 +110,15 @@ create table if not exists public.ratings (
   game_id uuid not null references public.games(id) on delete cascade,
   rater_id uuid not null references public.profiles(id) on delete cascade,
   target text not null,
-  score numeric(3,1) not null check (score >= 1 and score <= 10),
+  score numeric(3,1) not null check (score >= 0.1 and score <= 10),
   note text,
   created_at timestamptz not null default now(),
   unique (game_id, rater_id, target)
 );
+
+-- Older installs allowed 1.0 minimum; ratings now go down to 0.1.
+alter table public.ratings drop constraint if exists ratings_score_check;
+alter table public.ratings add constraint ratings_score_check check (score >= 0.1 and score <= 10);
 
 alter table public.ratings enable row level security;
 
