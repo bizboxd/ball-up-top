@@ -678,3 +678,7 @@ body.has-banner main { padding-bottom: calc(150px + env(safe-area-inset-bottom, 
 /* Profile header: never let the name column squeeze to one letter wide on phones */
 .profile-head > .grow { flex: 1 1 240px; min-width: 200px; }
 .profile-head h1 { overflow-wrap: break-word; }
+.bookings { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 4px; }
+.bk { display: inline-block; width: 9px; height: 13px; border-radius: 2px; transform: rotate(8deg); }
+.bk.yc { background: #ffd23f; }
+.bk.rc { background: #ff3b3b; }

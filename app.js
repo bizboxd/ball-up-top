@@ -21,13 +21,15 @@ const MIN_VOTES = 2; // a game rating only counts once at least 2 people have ra
 const REVEAL_HOURS = 24; // ratings stay hidden until votes close (or everyone has voted)
 
 const SPORTS = {
-  soccer: { label: "Soccer", icon: "soccer", stats: [["goals", "G"], ["assists", "A"], ["saves", "SV"]], key: "goals", keyLabel: "Goals/G", img: IMG.hero },
+  soccer: { label: "Soccer", icon: "soccer", stats: [["goals", "G"], ["assists", "A"], ["saves", "SV"], ["yc", "YC"], ["rc", "RC"]], key: "goals", keyLabel: "Goals/G", img: IMG.hero },
   basketball: { label: "Basketball", icon: "basketball", stats: [["pts", "PTS"], ["reb", "REB"], ["ast", "AST"], ["stl", "STL"], ["blk", "BLK"]], key: "pts", keyLabel: "PPG", positions: ["PG", "SG", "SF", "PF", "C"], img: IMG.hoops },
   volleyball: { label: "Volleyball", icon: "volleyball", stats: [["kills", "K"], ["aces", "ACE"], ["blocks", "BLK"], ["digs", "DIG"]], key: "kills", keyLabel: "Kills/G", positions: ["S", "OH", "MB", "OPP", "L"], img: IMG.ball },
   other: { label: "Other", icon: "target", stats: [["pts", "PTS"]], key: "pts", keyLabel: "Pts/G", positions: [], img: IMG.ball },
 };
 const sportOf = (g) => SPORTS[g.sport] || SPORTS.other;
-const STAT_NAME = { goals: "Goals", assists: "Assists", saves: "Saves", pts: "Points", reb: "Rebounds", ast: "Assists", stl: "Steals", blk: "Blocks", kills: "Kills", aces: "Aces", blocks: "Blocks", digs: "Digs" };
+// Most-per-game caps for stats that have a real limit (two yellows or one straight red).
+const STAT_MAX = { yc: 2, rc: 1 };
+const STAT_NAME = { yc: "Yellow cards", rc: "Red cards", goals: "Goals", assists: "Assists", saves: "Saves", pts: "Points", reb: "Rebounds", ast: "Assists", stl: "Steals", blk: "Blocks", kills: "Kills", aces: "Aces", blocks: "Blocks", digs: "Digs" };
 
 /* ============================================================
    Icons (drawn for this app, no emoji)
@@ -589,6 +591,15 @@ function slotLabel(team, pid) {
   return "MID";
 }
 
+// Little booking cards next to a name: one yellow per caution, red if sent off.
+function cardMarks(stats) {
+  const y = Math.min(2, Number(stats?.yc) || 0), r = Math.min(1, Number(stats?.rc) || 0);
+  if (!y && !r) return "";
+  const marks = [...Array(y)].map(() => '<i class="bk yc"></i>').join("") + (r ? '<i class="bk rc"></i>' : "");
+  const label = [y ? `${y} yellow card${y > 1 ? "s" : ""}` : "", r ? "red card" : ""].filter(Boolean).join(", ");
+  return ` <span class="bookings" role="img" aria-label="${label}" title="${label}">${marks}</span>`;
+}
+
 function lineupList(g, team, idx) {
   const revealed = isRevealed(g);
   const rows = team.playerIds
@@ -608,7 +619,7 @@ function lineupList(g, team, idx) {
     return `
     <a class="lineup-row" href="#/p/${pid}">
       ${avatar(pid)}
-      <div class="grow"><b>${esc(uname(pid))}${team.captainId === pid ? ' <span class="cap-inline">C</span>' : ""}${top?.playerId === pid ? ' <span class="motm-inline">MOTM</span>' : ""}</b>
+      <div class="grow"><b>${esc(uname(pid))}${team.captainId === pid ? ' <span class="cap-inline">C</span>' : ""}${top?.playerId === pid ? ' <span class="motm-inline">MOTM</span>' : ""}${cardMarks(g.stats?.[pid])}</b>
       ${sub.length ? meta(...sub) : ""}</div>
       ${right}
     </a>`;
@@ -1436,7 +1447,7 @@ function viewGame(id) {
     <section class="panel pad" id="my-stats">
       <div class="block-head tight"><h3>Your stats</h3><span class="muted small">Only you can edit these. They lock when voting closes.</span></div>
       <form id="stats-form" class="stat-inputs">
-        ${cfg.stats.map(([k, l]) => `<label>${STAT_NAME[k] || l}<input type="number" min="0" max="199" inputmode="numeric" data-mystat="${k}" value="${esc(mineStats[k] ?? "")}" placeholder="0" aria-label="Your ${(STAT_NAME[k] || l).toLowerCase()}"></label>`).join("")}
+        ${cfg.stats.map(([k, l]) => `<label>${STAT_NAME[k] || l}<input type="number" min="0" max="${STAT_MAX[k] ?? 199}" inputmode="numeric" data-mystat="${k}" value="${esc(mineStats[k] ?? "")}" placeholder="0" aria-label="Your ${(STAT_NAME[k] || l).toLowerCase()}"></label>`).join("")}
         <button class="btn primary">Save my stats</button>
       </form>
     </section>` : "";
@@ -1565,7 +1576,7 @@ function bindGame(id) {
   $("#stats-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const stats = {};
-    $$("[data-mystat]", e.target).forEach((i) => { const v = Math.round(Number(i.value)); if (v > 0) stats[i.dataset.mystat] = v; });
+    $$("[data-mystat]", e.target).forEach((i) => { const k = i.dataset.mystat; const v = Math.min(STAT_MAX[k] ?? 199, Math.round(Number(i.value))); if (v > 0) stats[k] = v; });
     act($("button", e.target), async () => {
       if (!votingOpen(g)) throw new Error("Stats are locked because voting has closed.");
       if (!teamOf(g, meId())) throw new Error("You can only add stats for games you played in.");
