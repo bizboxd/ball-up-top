@@ -1,5 +1,6 @@
 import { createStore } from "./store.js";
 import { billing, PLANS, isNative } from "./billing.js";
+import { ads } from "./ads.js";
 
 /* ============================================================
    Config
@@ -271,7 +272,13 @@ function expectedVotes(g) {
   const a = g.teamA.playerIds.length, b = g.teamB?.playerIds.length || 0;
   return a * (a - 1) + b * (b - 1) + (g.ref ? a + b : 0);
 }
-const votesCast = (g) => state.ratings.filter((r) => r.gameId === g.id).length;
+// Opposition ratings (a Pro extra) are kept apart: they never count toward the main rating, MOTM or the reveal.
+function isOppRating(r, g) {
+  if (!g || r.target === "ref") return false;
+  const a = teamOf(g, r.raterId), b = teamOf(g, r.target);
+  return !!(a && b && a !== b);
+}
+const votesCast = (g) => state.ratings.filter((r) => r.gameId === g.id && !isOppRating(r, g)).length;
 const revealAt = (g) => (g.finalAt ? new Date(g.finalAt).getTime() + REVEAL_HOURS * 36e5 : 0);
 
 function isRevealed(g) {
@@ -283,9 +290,11 @@ function isRevealed(g) {
 }
 const votingOpen = (g) => g.status === "final" && !isRevealed(g);
 
-function ratingIndex() {
+function ratingIndex(opp = false) {
   const idx = new Map();
+  const games = new Map(state.games.map((g) => [g.id, g]));
   for (const r of state.ratings) {
+    if (isOppRating(r, games.get(r.gameId)) !== opp) continue;
     const k = `${r.gameId}|${r.target}`;
     if (!idx.has(k)) idx.set(k, []);
     idx.get(k).push(r.score);
@@ -299,6 +308,8 @@ function ratingFor(idx, g, target) {
   const xs = idx.get(`${g.id}|${target}`) || [];
   return xs.length >= MIN_VOTES ? avg(xs) : null;
 }
+
+const oppIndex = () => ratingIndex(true);
 
 function motm(idx, g) {
   if (!isRevealed(g)) return null;
@@ -325,6 +336,12 @@ function rateTargets(g, id) {
   const out = teamObj(g, side).playerIds.filter((p) => p !== id).map((p) => ({ target: p }));
   if (g.ref && g.ref.userId !== id) out.push({ target: "ref" });
   return out;
+}
+// Pro: the other team's players.
+function oppTargets(g, id) {
+  const side = teamOf(g, id);
+  if (!side || g.status !== "final" || !g.teamB) return [];
+  return teamObj(g, side === "A" ? "B" : "A").playerIds.map((p) => ({ target: p, opp: true }));
 }
 const myVote = (g, target) => state.ratings.find((r) => r.gameId === g.id && r.raterId === meId() && r.target === target);
 
@@ -569,11 +586,13 @@ function lineupList(g, team, idx) {
     .map((pid) => ({ pid, r: idx ? ratingFor(idx, g, pid) : null, v: idx ? votesFor(idx, g.id, pid) : 0 }))
     .sort((a, b) => (b.r ?? -1) - (a.r ?? -1));
   const top = idx ? motm(idx, g) : null;
+  const oidx = revealed ? oppIndex() : null;
   return rows.map(({ pid, r, v }) => {
     let right = "";
     if (g.status === "final") {
+      const o = oidx ? ratingFor(oidx, g, pid) : null;
       right = revealed
-        ? `<div class="rcol">${badge(r)}<small>${r == null && v < MIN_VOTES ? `${v} vote${v === 1 ? "" : "s"}, needs ${MIN_VOTES}` : `${v} votes`}</small></div>`
+        ? `<div class="rcol">${badge(r)}<small>${r == null && v < MIN_VOTES ? `${v} vote${v === 1 ? "" : "s"}, needs ${MIN_VOTES}` : `${v} votes`}</small>${o != null ? `<small class="opp-r" title="Average rating from the other team">Opp ${fmt(o)}</small>` : ""}</div>`
         : `<div class="rcol"><span class="badge r-none hidden-r">?</span><small>Hidden</small></div>`;
     }
     const sub = [team.positions?.[pid], g.sport === "soccer" ? slotLabel(team, pid) : null, statLine(g.sport, g.stats?.[pid])].filter(Boolean).map(esc);
@@ -855,6 +874,8 @@ function bindSetup() {
    ============================================================ */
 
 const PRO_PERKS = [
+  ["x", "No ads", "Free players see a small sponsored spot on the feed and leaderboard. Pro hides it."],
+  ["target", "Rate the opposition", "Rate the other team too. It shows as a separate opponent rating on the game."],
   ["chart", "Rating trend", "See every rating you've ever had on one chart, plus your best game."],
   ["calendar", "Season recaps", "Month by month: games, record, average rating, MOTMs and your best night."],
   ["users", "Head to head", "Your record with and against any friend, and who rates higher when you share the pitch."],
@@ -1004,6 +1025,8 @@ function viewFeed() {
         <small>${h.motm ? "MOTM, " : ""}${esc(relDate(h.g.date))}</small>
       </a>`).join("")}</div>
   </section>` : ""}
+
+  ${ads.slot()}
 
   <div class="feed-controls">
     <div class="seg2">
@@ -1340,7 +1363,7 @@ function viewGame(id) {
          <div class="progress"><span style="width:${Math.min(100, (cast / Math.max(1, need)) * 100).toFixed(0)}%"></span></div>`
       : "";
     if (!mySide) {
-      rateBlock = voting ? `<section class="panel pad">${statusLine}<p class="muted small">Only players in this game vote. Everyone rates their own teammates and the ref, never the other team.</p></section>` : "";
+      rateBlock = voting ? `<section class="panel pad">${statusLine}<p class="muted small">Only players in this game vote. Everyone rates their own teammates and the ref. Pro players can also rate the other team, shown separately.</p></section>` : "";
     } else if (!voting) {
       const mine = targets.filter((t) => myVote(g, t.target)).length;
       rateBlock = `<section class="panel pad closed"><h3>Voting closed</h3><p class="muted small">${mine ? `You rated ${mine} of ${targets.length}.` : "You didn't vote in this one."} A game rating counts once at least ${MIN_VOTES} people have voted.</p></section>`;
@@ -1353,14 +1376,15 @@ function viewGame(id) {
         <h3>Rate your team${g.ref && g.ref.userId !== meId() ? " and the ref" : ""}</h3>
         <p class="muted small">You only rate your own side. Drag, or tap the minus and plus to move by 0.1. Anywhere from 0.1 to 10. Around 6.0 is an average run, 7 is solid, 8 is cooking, 9 means somebody got cooked.</p>
         <form id="rate-form" class="rate-list">
-          ${targets.map(({ target }) => {
+          ${[...targets, ...(billing.isPro() ? oppTargets(g, meId()) : [])].map(({ target, opp }, i, all) => {
             const mine = myVote(g, target);
             const v = mine ? mine.score : 6.5;
             const isRef = target === "ref";
             const name = isRef ? (g.ref.userId ? uname(g.ref.userId) : g.ref.name) : uname(target);
-            const sub = isRef ? "Referee" : statLine(g.sport, g.stats?.[target]) || slotLabel(teamObj(g, mySide), target) || "";
-            return `
-            <div class="rate-row ${isRef ? "is-ref" : ""}">
+            const sub = isRef ? "Referee" : statLine(g.sport, g.stats?.[target]) || slotLabel(teamObj(g, opp ? (mySide === "A" ? "B" : "A") : mySide), target) || "";
+            const head = opp && !all[i - 1]?.opp ? `<div class="opp-head"><h4>Rate the other team</h4><span class="pro-tag">PRO</span><small class="muted">Shown as a separate opponent rating. It doesn't change their main rating or MOTM.</small></div>` : "";
+            return `${head}
+            <div class="rate-row ${isRef ? "is-ref" : ""} ${opp ? "is-opp" : ""}">
               ${isRef ? (g.ref.userId ? avatar(g.ref.userId) : `<span class="avatar whistle">${icon("whistle")}</span>`) : avatar(target)}
               <div class="grow"><b>${esc(name)}</b>${sub ? `<small class="muted">${esc(sub)}</small>` : ""}
                 <div class="slider-row">
@@ -1372,6 +1396,7 @@ function viewGame(id) {
               <span class="badge ${ratingClass(v)} live" data-for="${target}">${fmt(v)}</span>
             </div>`;
           }).join("")}
+          ${!billing.isPro() && oppTargets(g, meId()).length ? `<div class="opp-lock"><div><b>Rate the other team</b> <span class="pro-tag">PRO</span><small class="muted">Think their striker cooked? Pro lets you rate the opposition too.</small></div><a class="btn" href="#/plans">Unlock</a></div>` : ""}
           <button class="btn primary block" type="submit">${targets.every((t) => myVote(g, t.target)) ? "Update my votes" : "Submit my votes"}</button>
         </form>
       </section>`;
@@ -1498,7 +1523,7 @@ function bindGame(id) {
     }));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const allowed = new Set(rateTargets(g, meId()).map((t) => t.target));
+      const allowed = new Set([...rateTargets(g, meId()), ...(billing.isPro() ? oppTargets(g, meId()) : [])].map((t) => t.target));
       act($("button[type=submit]", form), async () => {
         if (!votingOpen(g)) throw new Error("Voting has closed for this game.");
         const list = $$('input[type="range"]', form)
@@ -2103,6 +2128,7 @@ function viewLeaders() {
       <tbody>${refs.map((r) => `<tr data-href="#/p/${r.u.id}"><td><span class="pcell">${avatar(r.u.id, "sm")}${esc(r.u.displayName)}</span></td><td>${r.s.reffed}</td><td>${badge(r.s.refAvg)}</td></tr>`).join("")}</tbody>
     </table></div></div>
   </section>` : ""}
+  ${ads.slot()}
   <p class="muted small center footnote">A game rating counts once at least ${MIN_VOTES} teammates have rated you, and only after voting closes. Seasons reset every month.</p>`;
 }
 
@@ -2157,18 +2183,21 @@ function render() {
   if (!state.me) {
     main.innerHTML = viewAuth();
     bindAuth();
+    ads.afterRender("auth");
     return;
   }
   if (store.recovery) {
     document.body.classList.add("signed-out");
     main.innerHTML = viewNewPassword();
     bindNewPassword();
+    ads.afterRender("auth");
     return;
   }
   if (state.me.needsSetup) {
     document.body.classList.add("signed-out");
     main.innerHTML = viewSetup();
     bindSetup();
+    ads.afterRender("auth");
     return;
   }
 
@@ -2176,6 +2205,7 @@ function render() {
     document.body.classList.add("signed-out");
     main.innerHTML = viewPaywall();
     bindPaywall();
+    ads.afterRender("plans");
     if (billing.enabled) billing.loadPlans().then((p) => { if (location.hash.startsWith("#/plans") && JSON.stringify(p) !== JSON.stringify(state.plans)) { state.plans = p; rerenderKeepScroll(); } });
     return;
   }
@@ -2201,6 +2231,7 @@ function render() {
   $("#nav-me").setAttribute("href", `#/p/${meId()}`);
   $("#nav-me-avatar").innerHTML = avatar(meId(), "xs");
   updateBadges();
+  ads.afterRender(route === "new" ? "editor" : route || "");
 }
 
 let prevRoute = null;

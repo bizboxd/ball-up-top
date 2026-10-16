@@ -8,6 +8,11 @@
 #   ASC_KEY_ID         App Store Connect API key ID (Users and Access > Integrations > App Store Connect API, role: Admin)
 #   ASC_ISSUER_ID      Issuer ID shown on that same page
 #   ASC_KEY_P8         Full contents of the downloaded AuthKey_XXXX.p8 file
+#
+# Ads (optional, repo Settings > Secrets and variables > Actions > Variables):
+#   ADMOB_APP_ID       AdMob app ID (ca-app-pub-XXXX~YYYY). When set, the AdMob plugin is added
+#                      and Info.plist gets GADApplicationIdentifier. Also put the banner unit ID
+#                      in config.js (ADMOB_BANNER_ID). Leave unset for an ad-free build.
 name: iOS app
 
 on:
@@ -36,6 +41,7 @@ jobs:
       BUNDLE_ID: com.bizboxd.balluptop
       MARKETING_VERSION: "1.0.0"
       HAS_SIGNING: ${{ secrets.ASC_KEY_ID != '' && secrets.ASC_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' }}
+      ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +51,10 @@ jobs:
 
       - name: Install
         run: npm install --no-audit --no-fund
+
+      - name: Ads plugin (only when ADMOB_APP_ID is set)
+        if: ${{ vars.ADMOB_APP_ID != '' }}
+        run: npm install --no-audit --no-fund @capacitor-community/admob@^7
 
       - name: Build web app
         run: npm run build
@@ -69,6 +79,12 @@ jobs:
           pb "Add :CFBundleURLTypes:0:CFBundleURLName string $BUNDLE_ID"
           pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes array"
           pb "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $BUNDLE_ID"
+          if [ -n "$ADMOB_APP_ID" ]; then
+            pb "Add :GADApplicationIdentifier string $ADMOB_APP_ID"
+            pb "Add :SKAdNetworkItems array"
+            pb "Add :SKAdNetworkItems:0 dict"
+            pb "Add :SKAdNetworkItems:0:SKAdNetworkIdentifier string cstr6suwn9.skadnetwork"
+          fi
           cat > "$APP/App.entitlements" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
