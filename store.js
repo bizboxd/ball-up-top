@@ -1,3 +1,4 @@
+import { isReservedUsername } from "./reserved.js";
 // Data layer with two interchangeable backends sharing one async API:
 //   - LocalStore    : demo mode, everything in this browser's localStorage
 //   - SupabaseStore : real accounts (Supabase Auth), shared database + avatar storage
@@ -112,7 +113,7 @@ class LocalStore {
     username = username.trim().toLowerCase();
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers, _ or .");
     if (password.length < 6) throw new Error("Password needs at least 6 characters.");
-    if (this.db.users.some((u) => u.username === username)) throw new Error("That username is taken.");
+    if (isReservedUsername(username) || this.db.users.some((u) => u.username === username)) throw new Error("That username is taken.");
     const salt = uid();
     const u = {
       id: uid(), username, displayName: displayName.trim() || username, salt,
@@ -353,7 +354,7 @@ class SupabaseStore {
     username = username.trim().toLowerCase();
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers, _ or .");
     const taken = this.#ok(await this.sb.from("profiles").select("id").eq("username", username).neq("id", id));
-    if (taken.length) throw new Error("That username is taken.");
+    if (taken.length || isReservedUsername(username)) throw new Error("That username is taken.");
     this.#ok(await this.sb.from("profiles").update({ username, display_name: displayName.trim() || username, onboarded: true }).eq("id", id));
   }
   #ok({ data, error }) {
@@ -395,7 +396,7 @@ class SupabaseStore {
     username = username.trim().toLowerCase();
     if (!/^[a-z0-9_.]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers, _ or .");
     const taken = this.#ok(await this.sb.from("profiles").select("id").eq("username", username));
-    if (taken.length) throw new Error("That username is taken.");
+    if (taken.length || isReservedUsername(username)) throw new Error("That username is taken.");
     const res = this.#ok(
       await this.sb.auth.signUp({
         email: email.trim(), password,
