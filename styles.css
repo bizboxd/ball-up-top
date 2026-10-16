@@ -74,7 +74,7 @@ code { background: var(--s3); padding: 1px 6px; border-radius: 4px; font-size: 1
   border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; font: 900 25px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
-.brand img { width: 32px; height: 32px; border-radius: 7px; }
+.brand img { height: 40px; width: auto; display: block; }
 .nav { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .nav a, .bell { position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 14px; font-weight: 600; color: var(--muted); border-radius: 6px; }
 .nav a:hover, .bell:hover { color: var(--text); }
@@ -94,7 +94,7 @@ body.signed-out .topbar { display: none; }
 @media (max-width: 760px) {
   /* backdrop-filter would make the topbar the containing block for the fixed bottom nav */
   .topbar { gap: 10px; backdrop-filter: none; background: #000; }
-  .brand { font-size: 22px; }
+  .brand img { height: 34px; }
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0;
     justify-content: space-around; gap: 0;
@@ -247,8 +247,7 @@ label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(-
 @media (max-width: 700px) { .auth { background: linear-gradient(0deg, #000 45%, rgba(0, 0, 0, .55) 100%), #000 var(--img) center top / cover no-repeat; align-items: end; } }
 .auth-panel { width: 100%; max-width: 420px; display: grid; gap: 14px; }
 .lockup { display: flex; align-items: center; gap: 12px; }
-.auth-logo { width: 46px; height: 46px; border-radius: 10px; }
-.wordmark { font: 900 34px/1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.logo-full { width: min(260px, 70%); height: auto; display: block; }
 .auth-h { font: 800 clamp(40px, 7vw, 56px)/.92 var(--display); text-transform: uppercase; margin: 10px 0 8px; }
 .social { display: grid; gap: 10px; }
 .social-btn { width: 100%; padding: 13px 18px; font-size: 15px; background: #fff; color: #0b0f18; border-color: #fff; }

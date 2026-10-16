@@ -12,6 +12,7 @@ const IMG = {
   hoops: HF + "20261015_173432_2a832981-0591-4125-a706-b86134cb0bf5_min.webp",
   ball: HF + "20261015_173431_7b35b216-9afb-427a-b31d-56b90c38a39d_min.webp",
   icon: "apple-touch-icon.png",
+  logo: "logo.png",
   motm: HF + "20261015_173432_93416046-b584-485e-88d2-197c2cda6b04_min.webp",
 };
 
@@ -678,7 +679,7 @@ function viewAuth() {
   return `
   <div class="auth" style="--img:url('${IMG.ball}')">
     <div class="auth-panel">
-      <div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Who Cooked</span></div>
+      <div class="lockup"><img class="logo-full" src="${IMG.logo}" alt="Who Cooked"></div>
       <h1 class="auth-h">Every run, rated by the people who were there.</h1>
       <div class="social">
         <button type="button" class="btn social-btn apple ${shared ? "" : "soon"}" id="apple-btn">${APPLE_LOGO} Continue with Apple</button>
@@ -808,7 +809,7 @@ function viewPaywall(previewOnly = false) {
   return `
   <div class="paywall" style="--img:url('${IMG.motm}')">
     <div class="pw-panel">
-      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Who Cooked</span></div>`}
+      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="logo-full" src="${IMG.logo}" alt="Who Cooked"></div>`}
       <h1 class="auth-h">${active ? "You're a member" : "Your first week is on us"}</h1>
       ${active ? `<p class="muted">${esc(active.plan)} plan${active.trial ? " (free trial)" : ""}${active.expires && active.renews ? `, renews ${new Date(active.expires).toLocaleDateString()}` : active.expires ? `, ends ${new Date(active.expires).toLocaleDateString()}` : ""}.</p>` : `
       <ul class="pw-perks">
@@ -2108,7 +2109,7 @@ setInterval(async () => {
 
 (async function boot() {
   const brand = $("#brand-icon");
-  brand.src = IMG.icon;
+  brand.src = IMG.logo;
   brand.onerror = () => brand.remove();
     $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
   try {
