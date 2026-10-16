@@ -554,7 +554,7 @@ SupabaseStore.prototype.removeFriend = async function (id) {
 
 const APP_BUNDLE_ID = "com.bizboxd.balluptop";
 const NATIVE_REDIRECT = APP_BUNDLE_ID + "://auth";
-const SITE_URL = "https://bizboxd.github.io/who-cooked/";
+const SITE_URL = "https://whocooked.gg/";
 
 export function createStore() {
   const cfg = window.BUT_CONFIG || {};
