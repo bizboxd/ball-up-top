@@ -215,6 +215,19 @@ class LocalStore {
     this.#save();
   }
 
+  /* safety: blocks and reports */
+  async listBlocks(me) { return (this.db.blocks || []).filter((b) => b.blocker === me).map((b) => b.blocked); }
+  async block(me, id) {
+    this.db.blocks = (this.db.blocks || []).filter((b) => !(b.blocker === me && b.blocked === id));
+    this.db.blocks.push({ blocker: me, blocked: id });
+    this.#save();
+  }
+  async unblock(me, id) { this.db.blocks = (this.db.blocks || []).filter((b) => !(b.blocker === me && b.blocked === id)); this.#save(); }
+  async report(me, kind, targetId, reason) {
+    (this.db.reports ||= []).push({ reporter: me, kind, targetId, reason, createdAt: new Date().toISOString() });
+    this.#save();
+  }
+
   /* player stats (your own line only) */
   async listStats() { return structuredClone(this.db.playerStats); }
   async setStats(gameId, userId, stats) {
@@ -719,3 +732,21 @@ function seedFriends(users) {
   add("rico", "jay", "pending");
   return out;
 }
+
+SupabaseStore.prototype.listBlocks = async function (me) {
+  const { data, error } = await this.sb.from("blocks").select("blocked").eq("blocker", me);
+  if (error) return []; // older databases without the table: treat as no blocks
+  return data.map((r) => r.blocked);
+};
+SupabaseStore.prototype.block = async function (me, id) {
+  const { error } = await this.sb.from("blocks").upsert({ blocker: me, blocked: id }, { onConflict: "blocker,blocked" });
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.unblock = async function (me, id) {
+  const { error } = await this.sb.from("blocks").delete().eq("blocker", me).eq("blocked", id);
+  if (error) throw new Error(error.message);
+};
+SupabaseStore.prototype.report = async function (me, kind, targetId, reason) {
+  const { error } = await this.sb.from("reports").insert({ reporter: me, kind, target_id: targetId, reason: reason || "" });
+  if (error) throw new Error(error.message);
+};

@@ -8,6 +8,14 @@ window.BUT_CONFIG = {
   SUPABASE_URL: "https://majmjuxulvqcjdfumswv.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_UCfMJ2v_xnT2Y-WBla_IxA_k6IrXK5j",
 
+  // Sign-in options. Turn one on only after its provider is set up in Supabase (see README).
+  AUTH: {
+    APPLE_IOS: true,  // native Sign in with Apple in the iPhone app (Supabase Apple provider: client ID = bundle ID)
+    APPLE_WEB: false, // needs an Apple Services ID + key in Supabase
+    GOOGLE: false,    // needs a Google OAuth client in Supabase
+    PHONE: false,     // needs an SMS provider (e.g. Twilio) in Supabase
+  },
+
   REVENUECAT_IOS_KEY: "", // appl_...  (RevenueCat > Project > API keys > Apple App Store)
   REVENUECAT_WEB_KEY: "", // rcb_...   (RevenueCat > Project > API keys > Web Billing)
   REVENUECAT_ENTITLEMENT: "pro",

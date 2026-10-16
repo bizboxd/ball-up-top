@@ -80,21 +80,22 @@ async function reload() {
   revealCache = new Map();
   const me = await store.currentUser();
   if (!me) {
-    Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [] });
+    Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [], blocks: [] });
     return;
   }
   if (billing.enabled && !me.needsSetup) {
     try { await billing.start(me.id); } catch (err) { console.warn("Billing unavailable", err); }
   }
-  const [users, games, ratings, friendships, rsvps, comments, playerStats] = await Promise.all([
+  const [users, games, ratings, friendships, rsvps, comments, playerStats, blocks] = await Promise.all([
     store.listUsers(), store.listGames(), store.listRatings(), store.listFriendships(), store.listRsvps(), store.listComments(), store.listStats(),
+    store.listBlocks(me.id).catch(() => []),
   ]);
   // Each player's own stat line overrides anything stored on the game itself.
   for (const r of playerStats) {
     const g = games.find((x) => x.id === r.gameId);
     if (g) g.stats = { ...(g.stats || {}), [r.userId]: r.stats };
   }
-  Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments, playerStats });
+  Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments, playerStats, blocks });
 }
 
 /* ============================================================
@@ -265,7 +266,15 @@ const formatLabel = (g) => `${g.teamA.playerIds.length}v${g.teamB ? g.teamB.play
 const gamePlayers = (g) => [...g.teamA.playerIds, ...(g.teamB?.playerIds || [])];
 const rsvpsFor = (g) => state.rsvps.filter((r) => r.gameId === g.id);
 const rsvpOf = (g, id) => state.rsvps.find((r) => r.gameId === g.id && r.userId === id)?.status || null;
-const commentsFor = (g) => state.comments.filter((c) => c.gameId === g.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+const isBlocked = (id) => (state.blocks || []).includes(id);
+// Comments you reported are hidden for you straight away (remembered on this device).
+const hiddenKey = "wc.hiddenComments";
+const hiddenComments = () => { try { return new Set(JSON.parse(localStorage.getItem(hiddenKey) || "[]")); } catch (_) { return new Set(); } };
+const hideComment = (id) => { try { const h = hiddenComments(); h.add(id); localStorage.setItem(hiddenKey, JSON.stringify([...h])); } catch (_) {} };
+const commentsFor = (g) => {
+  const hidden = hiddenComments();
+  return state.comments.filter((c) => c.gameId === g.id && !isBlocked(c.userId) && !hidden.has(c.id)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+};
 
 // Every teammate rates every teammate, and every player rates the ref.
 function expectedVotes(g) {
@@ -667,6 +676,11 @@ function sparkline(values) {
 const APPLE_LOGO = `<svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="currentColor"><path d="M16.37 12.7c-.02-2.2 1.8-3.26 1.88-3.31-1.03-1.5-2.62-1.7-3.18-1.73-1.35-.14-2.64.8-3.33.8-.69 0-1.74-.78-2.87-.76-1.47.02-2.83.86-3.59 2.18-1.53 2.66-.39 6.6 1.1 8.75.73 1.05 1.6 2.24 2.73 2.2 1.1-.05 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.07 2.65-2.13.84-1.22 1.18-2.4 1.2-2.46-.03-.01-2.27-.87-2.29-3.52zM14.2 6.22c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.54 1.31-.56.65-1.05 1.68-.92 2.67.97.08 1.96-.49 2.56-1.22z"/></svg>`;
 const GOOGLE_G = `<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
 
+function authOptions() {
+  const a = window.BUT_CONFIG?.AUTH || {};
+  return { apple: isNative() ? !!a.APPLE_IOS : !!a.APPLE_WEB, google: !!a.GOOGLE, phone: !!a.PHONE };
+}
+
 function viewAuth() {
   const shared = store.mode === "shared";
   const login = state.authTab === "login";
@@ -717,13 +731,20 @@ function viewAuth() {
     <div class="auth-panel">
       <div class="lockup"><img class="logo-full" src="${IMG.logo}" alt="Who Cooked"></div>
       <h1 class="auth-h">Every run, rated by the people who were there.</h1>
-      <div class="social">
-        <button type="button" class="btn social-btn apple ${shared ? "" : "soon"}" id="apple-btn">${APPLE_LOGO} Continue with Apple</button>
-        <button type="button" class="btn social-btn ${shared ? "" : "soon"}" id="google-btn">${GOOGLE_G} Continue with Google</button>
-        <button type="button" class="btn social-btn ${shared ? "" : "soon"} ${phoneMode ? "on" : ""}" id="phone-btn">${icon("phone")} Continue with phone</button>
-      </div>
-      ${shared ? "" : `<p class="muted small soon-note">Apple, Google and phone sign-in switch on once your league database is connected. In demo mode, use a username.</p>`}
-      <div class="or"><span>or ${shared ? "use email" : "use a username"}</span></div>
+      ${(() => {
+        // Only show sign-in options that are actually switched on (config.js AUTH), so nothing errors.
+        const on = shared ? authOptions() : { apple: true, google: true, phone: true };
+        const soon = shared ? "" : "soon";
+        const btns = [
+          on.apple ? `<button type="button" class="btn social-btn apple ${soon}" id="apple-btn">${APPLE_LOGO} Continue with Apple</button>` : "",
+          on.google ? `<button type="button" class="btn social-btn ${soon}" id="google-btn">${GOOGLE_G} Continue with Google</button>` : "",
+          on.phone ? `<button type="button" class="btn social-btn ${soon} ${phoneMode ? "on" : ""}" id="phone-btn">${icon("phone")} Continue with phone</button>` : "",
+        ].join("");
+        if (!btns) return "";
+        return `<div class="social">${btns}</div>
+          ${shared ? "" : `<p class="muted small soon-note">Apple, Google and phone sign-in switch on once your league database is connected. In demo mode, use a username.</p>`}
+          <div class="or"><span>or ${shared ? "use email" : "use a username"}</span></div>`;
+      })()}
       <div class="tabs">
         <button class="${login ? "on" : ""}" data-tab="login">Log in</button>
         <button class="${state.authTab === "signup" ? "on" : ""}" data-tab="signup">Create account</button>
@@ -743,12 +764,12 @@ function bindAuth() {
     if (state.me && !state.me.needsSetup) toast(`Welcome, ${state.me.displayName}`);
   };
   // In shared mode this redirects to Google; in demo mode it explains why it's off.
-  $("#google-btn").addEventListener("click", (e) => act(e.currentTarget, () => store.signInWithGoogle()));
-  $("#apple-btn").addEventListener("click", (e) => act(e.currentTarget, async () => {
+  $("#google-btn")?.addEventListener("click", (e) => act(e.currentTarget, () => store.signInWithGoogle()));
+  $("#apple-btn")?.addEventListener("click", (e) => act(e.currentTarget, async () => {
     await store.signInWithApple();
     if (isNative()) await afterLogin(); // native sheet signs in without leaving the app
   }));
-  $("#phone-btn").addEventListener("click", () => {
+  $("#phone-btn")?.addEventListener("click", () => {
     if (!store.supportsSocialLogin) return toast("Phone sign-in switches on once the league database is connected (see README).");
     state.authTab = "phone";
     render();
@@ -882,7 +903,11 @@ const PRO_PERKS = [
   ["grid", "Stats by sport", "Per-game averages for every sport you play."],
 ];
 
+// In the iPhone app, Pro stays hidden until real payments are switched on (no "preview" for App Review).
+const proOffered = () => billing.enabled || !isNative();
+
 function proLock(title, blurb) {
+  if (!proOffered()) return "";
   return `<section class="panel pad pro-lock">
     <div class="block-head tight"><h3>${title}</h3><span class="pro-tag">PRO</span></div>
     <p class="muted small">${blurb}</p>
@@ -1363,7 +1388,7 @@ function viewGame(id) {
          <div class="progress"><span style="width:${Math.min(100, (cast / Math.max(1, need)) * 100).toFixed(0)}%"></span></div>`
       : "";
     if (!mySide) {
-      rateBlock = voting ? `<section class="panel pad">${statusLine}<p class="muted small">Only players in this game vote. Everyone rates their own teammates and the ref. Pro players can also rate the other team, shown separately.</p></section>` : "";
+      rateBlock = voting ? `<section class="panel pad">${statusLine}<p class="muted small">Only players in this game vote. Everyone rates their own teammates and the ref.${proOffered() ? " Pro players can also rate the other team, shown separately." : ""}</p></section>` : "";
     } else if (!voting) {
       const mine = targets.filter((t) => myVote(g, t.target)).length;
       rateBlock = `<section class="panel pad closed"><h3>Voting closed</h3><p class="muted small">${mine ? `You rated ${mine} of ${targets.length}.` : "You didn't vote in this one."} A game rating counts once at least ${MIN_VOTES} people have voted.</p></section>`;
@@ -1396,7 +1421,7 @@ function viewGame(id) {
               <span class="badge ${ratingClass(v)} live" data-for="${target}">${fmt(v)}</span>
             </div>`;
           }).join("")}
-          ${!billing.isPro() && oppTargets(g, meId()).length ? `<div class="opp-lock"><div><b>Rate the other team</b> <span class="pro-tag">PRO</span><small class="muted">Think their striker cooked? Pro lets you rate the opposition too.</small></div><a class="btn" href="#/plans">Unlock</a></div>` : ""}
+          ${proOffered() && !billing.isPro() && oppTargets(g, meId()).length ? `<div class="opp-lock"><div><b>Rate the other team</b> <span class="pro-tag">PRO</span><small class="muted">Think their striker cooked? Pro lets you rate the opposition too.</small></div><a class="btn" href="#/plans">Unlock</a></div>` : ""}
           <button class="btn primary block" type="submit">${targets.every((t) => myVote(g, t.target)) ? "Update my votes" : "Submit my votes"}</button>
         </form>
       </section>`;
@@ -1429,7 +1454,7 @@ function viewGame(id) {
       <div class="comment ${isReply ? "reply" : ""}" id="c-${c.id}">
         <a href="#/p/${c.userId}">${avatar(c.userId, isReply ? "xs" : "sm")}</a>
         <div class="grow"><div class="c-head"><b>${esc(uname(c.userId))}</b>${parent && isReply ? `<span class="c-to">to ${esc(firstName(parent.userId))}</span>` : ""}<small class="muted">${timeAgo(c.createdAt)}</small>
-          ${c.userId === meId() ? `<button class="c-del" data-delcomment="${c.id}" aria-label="Delete comment">${icon("x")}</button>` : ""}</div>
+          ${c.userId === meId() ? `<button class="c-del" data-delcomment="${c.id}" aria-label="Delete comment">${icon("x")}</button>` : `<button class="c-report" data-report="${c.id}" aria-label="Report comment">${icon("flag")}</button>`}</div>
         <p>${esc(c.body)}</p>
         <button class="c-reply" data-reply="${c.id}">Reply</button>
         ${state.replyTo === c.id ? `
@@ -1585,6 +1610,21 @@ function bindGame(id) {
       $("#comment-body")?.focus();
     });
   });
+  $$("[data-report]").forEach((b) => b.addEventListener("click", () => {
+    if (!b.dataset.armed) {
+      b.dataset.armed = "1";
+      b.classList.add("armed");
+      b.innerHTML = "Report?";
+      setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.classList.remove("armed"); b.innerHTML = icon("flag"); } }, 4000);
+      return;
+    }
+    act(b, async () => {
+      await store.report(meId(), "comment", b.dataset.report, "Reported from a game's banter");
+      hideComment(b.dataset.report);
+      rerenderKeepScroll();
+      toast("Reported. We'll review it within 24 hours, and it's hidden for you.");
+    });
+  }));
   $$("[data-delcomment]").forEach((b) => b.addEventListener("click", () => act(b, async () => {
     await store.deleteComment(b.dataset.delcomment);
     await reload();
@@ -1913,7 +1953,10 @@ function viewProfile(id) {
     <div class="grow">
       <h1>${esc(u.displayName)}</h1>
       ${meta(`@${esc(u.username)}`, together && together.total ? `${together.total} games together, ${together.same} as teammates` : "")}
-      ${mine ? "" : `<div class="ph-actions">${friendButton(id)}</div>`}
+      ${mine ? "" : `<div class="ph-actions">${isBlocked(id) ? "" : friendButton(id)}
+        <button class="btn quiet small" id="report-user">${icon("flag")} Report</button>
+        <button class="btn quiet small ${isBlocked(id) ? "" : "danger"}" id="block-user">${isBlocked(id) ? "Unblock" : "Block"}</button></div>`}
+      ${!mine && isBlocked(id) ? `<p class="muted small mt">You blocked ${esc(firstName(id))}. You won't see their comments.</p>` : ""}
       <div class="ph-stats">
         <div><b>${s.games.length}</b><small>Games</small></div>
         <div><b>${s.wins}-${s.losses}${s.draws ? "-" + s.draws : ""}</b><small>Record</small></div>
@@ -1940,7 +1983,7 @@ function viewProfile(id) {
       <button type="button" class="btn quiet danger" id="signout">Log out</button>
     </form>
   </section>
-  <section class="panel pad">
+  ${!proOffered() ? "" : `<section class="panel pad">
     <div class="block-head tight"><h3>Plan</h3>${pro ? `<span class="pro-tag">PRO</span>` : ""}</div>
     ${(() => {
       const a = billing.activeLabel();
@@ -1950,7 +1993,7 @@ function viewProfile(id) {
       return `<p>${esc(a.plan)} plan${a.trial ? ", free trial" : ""}${a.expires ? `<span class="muted small">, ${a.renews ? "renews" : "ends"} ${new Date(a.expires).toLocaleDateString()}</span>` : ""}</p>
         <div class="inline mt">${url && a.plan !== "Lifetime" ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Manage or cancel</a>` : ""}<a class="btn quiet" href="#/plans">Plans</a></div>`;
     })()}
-  </section>
+  </section>`}
   <section class="panel pad danger-zone">
     <h3>Delete account</h3>
     <p class="muted small">Permanently deletes your profile, ratings, comments and stats. ${billing.enabled ? "Deleting your account doesn't cancel a subscription; cancel it first from Manage." : ""}</p>
@@ -2019,6 +2062,31 @@ function viewProfile(id) {
 
 function bindProfile(id) {
   bindFriendButtons($("#main"));
+  const armed = (btn, label, run) => btn?.addEventListener("click", () => {
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = "1";
+      const prev = btn.innerHTML;
+      btn.textContent = label;
+      setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = prev; } }, 4000);
+      return;
+    }
+    act(btn, run);
+  });
+  armed($("#report-user"), "Tap again to report", async () => {
+    await store.report(meId(), "user", id, "Reported from profile");
+    toast("Reported. We'll review it within 24 hours.");
+  });
+  const blockBtn = $("#block-user");
+  if (blockBtn && isBlocked(id)) {
+    blockBtn.addEventListener("click", () => act(blockBtn, async () => { await store.unblock(meId(), id); await reload(); rerenderKeepScroll(); toast("Unblocked"); }));
+  } else {
+    armed(blockBtn, "Tap again to block", async () => {
+      await store.block(meId(), id);
+      await reload();
+      rerenderKeepScroll();
+      toast(`Blocked. You won't see ${firstName(id)}'s comments.`);
+    });
+  }
   const uploadPhoto = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2201,6 +2269,7 @@ function render() {
     return;
   }
 
+  if (route === "plans" && !proOffered()) { location.replace(`#/p/${meId()}`); return; }
   if (route === "plans") {
     document.body.classList.add("signed-out");
     main.innerHTML = viewPaywall();

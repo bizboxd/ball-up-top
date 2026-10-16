@@ -671,3 +671,7 @@ table.leaders th:first-child, table.leaders td:first-child { padding-left: 18px;
 .ad-label a { color: var(--ice); text-transform: none; letter-spacing: 0; }
 /* iPhone app: keep content clear of the AdMob banner that sits above the bottom nav */
 body.has-banner main { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+.c-report { margin-left: auto; background: none; border: 0; color: var(--dim); cursor: pointer; padding: 6px; min-width: 32px; min-height: 32px; display: grid; place-items: center; font: 600 12px var(--body); }
+.c-report .ic { width: 15px; height: 15px; }
+.c-report:hover, .c-report.armed { color: var(--red); }
+.ph-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
