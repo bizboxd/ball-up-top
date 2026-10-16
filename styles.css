@@ -675,3 +675,6 @@ body.has-banner main { padding-bottom: calc(150px + env(safe-area-inset-bottom, 
 .c-report .ic { width: 15px; height: 15px; }
 .c-report:hover, .c-report.armed { color: var(--red); }
 .ph-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* Profile header: never let the name column squeeze to one letter wide on phones */
+.profile-head > .grow { flex: 1 1 240px; min-width: 200px; }
+.profile-head h1 { overflow-wrap: break-word; }

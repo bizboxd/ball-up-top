@@ -31,7 +31,6 @@ async def main():
         pg = await ctx.new_page()
         await pg.goto(BASE)
         await settle(pg)
-        await pg.screenshot(path=f"{OUT}/01-login.png")
 
         inputs = await pg.query_selector_all("#auth-form input")
         await inputs[0].fill("marcus")
