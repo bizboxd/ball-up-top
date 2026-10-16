@@ -1620,7 +1620,7 @@ async function openShareCard(g) {
     blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
   }
   const url = URL.createObjectURL(blob);
-  const file = new File([blob], `ball-up-top-${g.date}.png`, { type: "image/png" });
+  const file = new File([blob], `who-cooked-${g.date}.png`, { type: "image/png" });
   const canShare = !!navigator.canShare?.({ files: [file] });
   const m = $("#modal");
   m.innerHTML = `
@@ -1628,7 +1628,7 @@ async function openShareCard(g) {
       <img src="${url}" alt="Match card for ${esc(g.teamA.name)} vs ${esc(g.teamB.name)}">
       <div class="modal-actions">
         ${canShare ? `<button class="btn primary" id="mc-share">${icon("share")} Share</button>` : ""}
-        <a class="btn ${canShare ? "" : "primary"}" href="${url}" download="ball-up-top-${g.date}.png">Save image</a>
+        <a class="btn ${canShare ? "" : "primary"}" href="${url}" download="who-cooked-${g.date}.png">Save image</a>
         <button class="btn quiet" id="mc-close">Close</button>
       </div>
     </div>`;

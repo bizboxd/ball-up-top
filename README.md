@@ -68,7 +68,7 @@ Real accounts support email + password, **Continue with Google**, and **Continue
 3. Under **Authentication → Providers → Email**, decide whether to require email confirmation (turning it off makes sign-up instant for friends).
 4. **Google sign-in:** in [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create an OAuth client (type *Web application*) and add `https://<your-project>.supabase.co/auth/v1/callback` as an authorized redirect URI. Paste the client ID and secret into **Authentication → Providers → Google** and enable it.
 5. **Phone sign-in:** enable **Authentication → Providers → Phone** and connect an SMS provider (Twilio, MessageBird or Vonage). Texting codes costs a little per message on their side.
-6. Under **Authentication → URL Configuration**, set the Site URL to your live site (e.g. `https://bizboxd.github.io/ball-up-top/`) and add it to the redirect allow list.
+6. Under **Authentication → URL Configuration**, set the Site URL to your live site (e.g. `https://bizboxd.github.io/who-cooked/`) and add it to the redirect allow list.
 7. Copy your **Project URL** and **anon public key** from **Project Settings → API** into `config.js`.
 
 The rating rules are enforced in the database too, not just the UI, so nobody can rate the other team by poking the API.
