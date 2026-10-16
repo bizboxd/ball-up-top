@@ -1,0 +1,43 @@
+# Makes App Store screenshots (6.9" iPhone, 1290x2796) from the demo league and saves them to appstore/screenshots.
+name: App Store screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/screenshots.py"
+      - ".github/workflows/screenshots.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright
+        run: |
+          pip install playwright==1.48.0
+          python -m playwright install --with-deps chromium
+      - name: Serve the site in demo mode
+        run: |
+          mkdir -p /tmp/site
+          cp *.html *.js *.css *.png /tmp/site/
+          sed -i 's#SUPABASE_URL: ".*"#SUPABASE_URL: ""#; s#SUPABASE_ANON_KEY: ".*"#SUPABASE_ANON_KEY: ""#' /tmp/site/config.js
+          (cd /tmp/site && python -m http.server 8765 >/dev/null 2>&1 &)
+          sleep 2
+      - name: Take screenshots
+        run: python scripts/screenshots.py http://localhost:8765/ appstore/screenshots
+      - name: Save to the repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appstore/screenshots
+          git diff --cached --quiet || git commit -m "Update App Store screenshots [skip ci]"
+          git push
