@@ -38,7 +38,7 @@ Who Cooked is free. Find your squad and find out who cooked.
 pickup,soccer,basketball,volleyball,rating,ratings,teammates,stats,sofascore,motm,league,squad,run
 
 ## URLs
-- Support URL: https://bizboxd.github.io/who-cooked/support.html
+- Support URL: https://bizboxd.github.io/who-cooked/support.html (contact: info.sportsboxd@gmail.com)
 - Marketing URL: https://bizboxd.github.io/who-cooked/
 - Privacy Policy URL: https://bizboxd.github.io/who-cooked/privacy.html
 
