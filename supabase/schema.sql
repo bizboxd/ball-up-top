@@ -1,4 +1,4 @@
--- Ball Up Top · Supabase schema
+-- Who Cooked · Supabase schema
 -- Run this whole file once in your Supabase project's SQL editor.
 
 -- ============ Profiles (one per account) ============

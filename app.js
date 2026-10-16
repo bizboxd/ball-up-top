@@ -678,7 +678,7 @@ function viewAuth() {
   return `
   <div class="auth" style="--img:url('${IMG.ball}')">
     <div class="auth-panel">
-      <div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Ball Up Top</span></div>
+      <div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Who Cooked</span></div>
       <h1 class="auth-h">Every run, rated by the people who were there.</h1>
       <div class="social">
         <button type="button" class="btn social-btn apple ${shared ? "" : "soon"}" id="apple-btn">${APPLE_LOGO} Continue with Apple</button>
@@ -808,7 +808,7 @@ function viewPaywall(previewOnly = false) {
   return `
   <div class="paywall" style="--img:url('${IMG.motm}')">
     <div class="pw-panel">
-      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Ball Up Top</span></div>`}
+      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="auth-logo" src="${IMG.icon}" alt="" onerror="this.remove()"><span class="wordmark">Who Cooked</span></div>`}
       <h1 class="auth-h">${active ? "You're a member" : "Your first week is on us"}</h1>
       ${active ? `<p class="muted">${esc(active.plan)} plan${active.trial ? " (free trial)" : ""}${active.expires && active.renews ? `, renews ${new Date(active.expires).toLocaleDateString()}` : active.expires ? `, ends ${new Date(active.expires).toLocaleDateString()}` : ""}.</p>` : `
       <ul class="pw-perks">
@@ -844,7 +844,7 @@ function bindPaywall() {
   $("#pw-buy").addEventListener("click", (e) => act(e.currentTarget, async () => {
     if (!billing.enabled) throw new Error("Payments switch on once the App Store and Stripe are connected.");
     const ok = await billing.purchase(state.plan, state.me?.email);
-    if (ok) { toast("You're in. Welcome to Ball Up Top."); location.hash = "#/"; render(); }
+    if (ok) { toast("You're in. Welcome to Who Cooked."); location.hash = "#/"; render(); }
   }));
   $("#pw-restore").addEventListener("click", (e) => act(e.currentTarget, async () => {
     const ok = await billing.restore();
@@ -1542,7 +1542,7 @@ async function drawShareCard(g, { photos }) {
   x.fillStyle = "rgba(43,107,255,.12)"; x.fillRect(0, 0, 70, H); x.fillRect(100, 0, 22, H); x.restore();
 
   x.fillStyle = "#fff"; x.font = `900 52px ${DISPLAY}`; x.textBaseline = "alphabetic";
-  x.fillText("BALL UP TOP", 72, 118);
+  x.fillText("WHO COOKED", 72, 118);
   x.textAlign = "right"; x.fillStyle = "#8a96ad"; x.font = `600 30px ${BODY}`;
   x.fillText(`${cfg.label}  ${formatLabel(g)}  ${relDate(g.date)}`, W - 72, 114);
   x.textAlign = "left";
@@ -1605,7 +1605,7 @@ async function drawShareCard(g, { photos }) {
 
   x.fillStyle = "#5b6780"; x.font = `600 28px ${BODY}`;
   x.fillText([g.location, fmtTime(g.time)].filter(Boolean).join(", "), 72, H - 64);
-  x.textAlign = "right"; x.fillStyle = "#2b6bff"; x.fillText("Rated on Ball Up Top", W - 72, H - 64);
+  x.textAlign = "right"; x.fillStyle = "#2b6bff"; x.fillText("Rated on Who Cooked", W - 72, H - 64);
   return c;
 }
 
@@ -1636,7 +1636,7 @@ async function openShareCard(g) {
   const close = () => { m.hidden = true; m.innerHTML = ""; URL.revokeObjectURL(url); };
   $("#mc-close").addEventListener("click", close);
   m.onclick = (e) => { if (e.target === m) close(); };
-  $("#mc-share")?.addEventListener("click", () => navigator.share({ files: [file], title: "Ball Up Top" }).catch(() => {}));
+  $("#mc-share")?.addEventListener("click", () => navigator.share({ files: [file], title: "Who Cooked" }).catch(() => {}));
 }
 
 /* ============================================================

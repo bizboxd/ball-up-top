@@ -1,4 +1,4 @@
-// Ball Up Top configuration. Everything in here is safe to be public.
+// Who Cooked configuration. Everything in here is safe to be public.
 //
 // SUPABASE_*: the shared league database (accounts, games, ratings).
 //   Leave both empty to run in demo mode (everything saved in this browser only).

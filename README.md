@@ -1,4 +1,4 @@
-# Ball Up Top
+# Who Cooked
 
 **Pickup, rated.** Log your pickup soccer, basketball and volleyball runs, set your formation, and rate your teammates out of 10, Sofascore-style.
 
@@ -24,7 +24,7 @@
 
 ## Membership
 
-After a 7-day free trial, Ball Up Top needs a membership: **$2/week, $5/month, $30/year, or $50 once (lifetime)**.
+After a 7-day free trial, Who Cooked needs a membership: **$2/week, $5/month, $30/year, or $50 once (lifetime)**.
 Payments run through RevenueCat: Apple in-app purchase in the iPhone app, Stripe on the website, one membership for both.
 Put the RevenueCat public keys in `config.js` to switch the paywall on. Without them the app is free to use.
 
@@ -35,7 +35,7 @@ Put the RevenueCat public keys in `config.js` to switch the paywall on. Without 
 | Yearly | `com.bizboxd.balluptop.yearly` | $30.00 / year | 7 days free | `$rc_annual` |
 | Lifetime | `com.bizboxd.balluptop.lifetime` | $50.00 once | none | `$rc_lifetime` |
 
-All four unlock the RevenueCat entitlement `pro`. App Store app: "Ball Up Top - Rate Your Run" (bundle `com.bizboxd.balluptop`, Apple ID 6823302773). Subscription group: "Ball Up Top Membership".
+All four unlock the RevenueCat entitlement `pro`. App Store app: "Who Cooked" (subtitle "Rate Your Pickup Run") (bundle `com.bizboxd.balluptop`, Apple ID 6823302773). Subscription group: "Who Cooked Membership".
 
 ## iPhone app
 
