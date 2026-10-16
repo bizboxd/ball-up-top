@@ -71,7 +71,7 @@ const state = {
   me: null, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [],
   replyTo: null, plan: "$rc_monthly", plans: PLANS,
   feedFilter: "all", feedScope: "friends", leadersSport: "all", leadersSeason: null, squadTab: "friends",
-  authTab: "login", phone: { number: "", sent: false },
+  authTab: "login", phone: { number: "", sent: false }, resetSentTo: "",
 };
 let revealCache = new Map();
 
@@ -652,8 +652,21 @@ function viewAuth() {
   const shared = store.mode === "shared";
   const login = state.authTab === "login";
   const phoneMode = state.authTab === "phone";
+  const forgotMode = state.authTab === "forgot";
   let form;
-  if (phoneMode) {
+  if (forgotMode) {
+    form = state.resetSentTo
+      ? `<div class="stack">
+           <p>Check <b>${esc(state.resetSentTo)}</b> for a link to reset your password. It can take a minute, and check spam too.</p>
+           <button type="button" class="btn block" id="forgot-back">Back to log in</button>
+         </div>`
+      : `<form id="forgot-form" class="stack">
+           <p class="muted small">Enter the email you signed up with and we'll send you a link to pick a new password.</p>
+           <label>Email<input name="email" id="f-remail" type="email" autocomplete="email" required></label>
+           <button class="btn primary block big">Send reset link</button>
+           <button type="button" class="btn quiet small" id="forgot-back">Back to log in</button>
+         </form>`;
+  } else if (phoneMode) {
     form = state.phone.sent
       ? `<form id="phone-form" class="stack">
            <p class="muted small">We texted a 6-digit code to <b>${esc(state.phone.number)}</b>.</p>
@@ -670,7 +683,8 @@ function viewAuth() {
         ${login
           ? `<label>${shared ? "Email" : "Username"}<input name="login" id="f-login" ${shared ? 'type="email"' : ""} autocomplete="username" required></label>
              <label>Password<input name="password" id="f-pass" type="password" autocomplete="current-password" required></label>
-             <button class="btn primary block big">Log in</button>`
+             <button class="btn primary block big">Log in</button>
+             <button type="button" class="linkish forgot" id="forgot-btn">Forgot password?</button>`
           : `${shared ? `<label>Email<input name="email" id="f-email" type="email" autocomplete="email" required></label>` : ""}
              <label>Username<input name="username" id="f-user" autocomplete="username" placeholder="jaybuckets" required pattern="[A-Za-z0-9_.]{3,20}"></label>
              <label>Display name<input name="displayName" id="f-dname" placeholder="What the squad calls you" required></label>
@@ -721,6 +735,17 @@ function bindAuth() {
     render();
   });
   $("#phone-back")?.addEventListener("click", () => { state.phone.sent = false; render(); });
+  $("#forgot-btn")?.addEventListener("click", () => { state.authTab = "forgot"; state.resetSentTo = ""; render(); setTimeout(() => $("#f-remail")?.focus(), 0); });
+  $("#forgot-back")?.addEventListener("click", () => { state.authTab = "login"; state.resetSentTo = ""; render(); });
+  $("#forgot-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = e.target.email.value.trim();
+    act($("button", e.target), async () => {
+      await store.sendPasswordReset(email);
+      state.resetSentTo = email;
+      render();
+    });
+  });
   $("#phone-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
@@ -752,6 +777,37 @@ function bindAuth() {
         }
       }
       await afterLogin();
+    });
+  });
+}
+
+/* Arrived from a password-reset email: choose a new password. */
+function viewNewPassword() {
+  return `
+  <div class="auth" style="--img:url('${IMG.ball}')">
+    <div class="auth-panel">
+      <div class="lockup"><img class="logo-full" src="${IMG.logo}" alt="Who Cooked"></div>
+      <h1 class="auth-h">Pick a new password</h1>
+      <form id="newpass-form" class="stack">
+        <label>New password<input name="password" id="n-pass" type="password" autocomplete="new-password" minlength="6" required></label>
+        <label>Type it again<input name="again" id="n-pass2" type="password" autocomplete="new-password" minlength="6" required></label>
+        <button class="btn primary block big">Save new password</button>
+      </form>
+    </div>
+  </div>`;
+}
+
+function bindNewPassword() {
+  $("#n-pass").focus();
+  $("#newpass-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    act($("button", f), async () => {
+      if (f.password.value !== f.again.value) throw new Error("Those passwords don't match.");
+      await store.updatePassword(f.password.value);
+      location.hash = "#/";
+      render();
+      toast("Password updated. You're logged in.");
     });
   });
 }
@@ -2101,6 +2157,12 @@ function render() {
   if (!state.me) {
     main.innerHTML = viewAuth();
     bindAuth();
+    return;
+  }
+  if (store.recovery) {
+    document.body.classList.add("signed-out");
+    main.innerHTML = viewNewPassword();
+    bindNewPassword();
     return;
   }
   if (state.me.needsSetup) {

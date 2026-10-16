@@ -657,3 +657,4 @@ table.leaders th:first-child, table.leaders td:first-child { padding-left: 18px;
 .recap td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line); }
 .recap td:last-child, .recap th:last-child { text-align: right; padding-right: 0; }
 .h2h { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.forgot { justify-self: center; padding: 10px; min-height: 44px; color: var(--ice); font-size: 14px; }

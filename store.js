@@ -83,6 +83,9 @@ class LocalStore {
   get supportsSocialLogin() { return false; }
   async signInWithGoogle() { throw new Error("Google sign-in turns on once the shared league database is connected (see README)."); }
   async signInWithApple() { throw new Error("Sign in with Apple turns on once the shared league database is connected (see README)."); }
+  get recovery() { return false; }
+  async sendPasswordReset() { throw new Error("Demo accounts live in this browser only, so there's no email to send a reset link to. Create a new demo account instead."); }
+  async updatePassword() {}
   async deleteAccount(id) {
     this.db.users = this.db.users.filter((u) => u.id !== id);
     this.db.friends = this.db.friends.filter((f) => f.from !== id && f.to !== id);
@@ -268,9 +271,14 @@ class SupabaseStore {
     const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
     this.native = !!window.Capacitor?.isNativePlatform?.();
     this.sb = createClient(this.url, this.key, { auth: { flowType: "pkce", detectSessionInUrl: !this.native, persistSession: true } });
-    // Finish a Google/Apple redirect (?code=...) before the app reads the session, then tidy the URL.
-    await this.sb.auth.getSession();
-    if (new URLSearchParams(location.search).has("code")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
+    // A password-reset link lands here with ?reset=1 (plus ?code=...); remember it so the app asks for a new password.
+    this.recovery = false;
+    this.sb.auth.onAuthStateChange((event) => { if (event === "PASSWORD_RECOVERY") this.recovery = true; });
+    const qs = new URLSearchParams(location.search);
+    // Finish a Google/Apple/reset redirect (?code=...) before the app reads the session, then tidy the URL.
+    const { data: sess } = await this.sb.auth.getSession();
+    if (qs.has("reset") && sess?.session) this.recovery = true;
+    if (qs.has("code") || qs.has("reset")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
     if (this.native) {
       // In the iPhone app, OAuth runs in the system browser and comes back through the app's URL scheme.
       const App = window.Capacitor.registerPlugin("App");
@@ -388,7 +396,19 @@ class SupabaseStore {
     this.#ok(await this.sb.auth.signInWithPassword({ email: login.trim(), password }));
     return this.currentUser();
   }
-  async signOut() { await this.sb.auth.signOut(); }
+  async signOut() { this.recovery = false; await this.sb.auth.signOut(); }
+  async sendPasswordReset(email) {
+    email = (email || "").trim();
+    if (!email) throw new Error("Enter the email you signed up with.");
+    // Reset links always open the website, even when asked for from the iPhone app.
+    const back = this.native ? SITE_URL : location.origin + location.pathname;
+    this.#ok(await this.sb.auth.resetPasswordForEmail(email, { redirectTo: back + "?reset=1" }));
+  }
+  async updatePassword(password) {
+    if (!password || password.length < 6) throw new Error("Use at least 6 characters.");
+    this.#ok(await this.sb.auth.updateUser({ password }));
+    this.recovery = false;
+  }
 
   /* users */
   async listUsers() {
@@ -520,6 +540,7 @@ SupabaseStore.prototype.removeFriend = async function (id) {
 
 const APP_BUNDLE_ID = "com.bizboxd.balluptop";
 const NATIVE_REDIRECT = APP_BUNDLE_ID + "://auth";
+const SITE_URL = "https://bizboxd.github.io/who-cooked/";
 
 export function createStore() {
   const cfg = window.BUT_CONFIG || {};
