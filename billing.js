@@ -4,13 +4,15 @@
 // Both use the Supabase user id as the RevenueCat app user id, so one subscription unlocks both.
 //
 // Plans live in RevenueCat as the "default" offering with the standard package ids:
-//   $rc_weekly, $rc_monthly, $rc_annual (each with a 7-day free trial) and $rc_lifetime (one-time).
+//   $rc_monthly, $rc_annual (each with a 7-day free trial) and $rc_lifetime (one-time).
+//
+// The app is free. Pro (entitlement "pro") unlocks extra stats: rating trend, best game,
+// per-sport breakdown, season recaps and head-to-head.
 
 const cfg = window.BUT_CONFIG || {};
 const ENTITLEMENT = cfg.REVENUECAT_ENTITLEMENT || "pro";
 
 export const PLANS = [
-  { id: "$rc_weekly", label: "Weekly", price: "$2", per: "week", trial: true },
   { id: "$rc_monthly", label: "Monthly", price: "$5", per: "month", trial: true, popular: true },
   { id: "$rc_annual", label: "Yearly", price: "$30", per: "year", trial: true, note: "Save 50% vs monthly" },
   { id: "$rc_lifetime", label: "Lifetime", price: "$50", per: "once", trial: false, note: "Pay once, keep it forever" },
@@ -51,8 +53,12 @@ class Billing {
     this.info = res?.customerInfo || res;
   }
 
+  // Before payments are switched on, Pro can be previewed per browser so it can be tested.
+  get previewPro() { try { return localStorage.getItem("wc.previewPro") === "1"; } catch (_) { return false; } }
+  set previewPro(on) { try { on ? localStorage.setItem("wc.previewPro", "1") : localStorage.removeItem("wc.previewPro"); } catch (_) {} }
+
   isPro() {
-    if (!this.enabled) return true;
+    if (!this.enabled) return this.previewPro;
     return !!this.info?.entitlements?.active?.[ENTITLEMENT];
   }
 

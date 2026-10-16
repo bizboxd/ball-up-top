@@ -33,6 +33,9 @@ const STAT_NAME = { goals: "Goals", assists: "Assists", saves: "Saves", pts: "Po
    ============================================================ */
 
 const ICON = {
+  chart: '<path d="M4 19h16"/><path d="M5 15l4.5-5 3.5 3 6-7"/>',
+  calendar: '<rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
+  grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/>',
   soccer: '<circle cx="12" cy="12" r="9"/><path d="M12 7.6l3.4 2.5-1.3 4h-4.2l-1.3-4z"/><path d="M12 3v4.6M15.4 10.1l5.2-1.6M14.1 14.1l3.1 4.3M9.9 14.1l-3.1 4.3M8.6 10.1L3.4 8.5"/>',
   basketball: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3v18M5.7 5.7c3.2 3.2 3.2 9.4 0 12.6M18.3 5.7c-3.2 3.2-3.2 9.4 0 12.6"/>',
   volleyball: '<circle cx="12" cy="12" r="9"/><path d="M12 12V3.2M12 12l7.7 4.4M12 12l-7.7 4.4M12 3.2c3.5 2.6 4.8 6.4 3.8 10.6M19.7 16.4c-4 1.7-8 1-11-2M4.3 16.4c-.4-4.3 1.4-7.9 5.2-10.3"/>',
@@ -792,14 +795,30 @@ function bindSetup() {
 }
 
 /* ============================================================
-   Paywall (7-day free trial, then weekly / monthly / yearly / lifetime)
+   Pro upgrade page (the app is free; Pro unlocks extra stats)
    ============================================================ */
 
-function viewPaywall(previewOnly = false) {
+const PRO_PERKS = [
+  ["chart", "Rating trend", "See every rating you've ever had on one chart, plus your best game."],
+  ["calendar", "Season recaps", "Month by month: games, record, average rating, MOTMs and your best night."],
+  ["users", "Head to head", "Your record with and against any friend, and who rates higher when you share the pitch."],
+  ["grid", "Stats by sport", "Per-game averages for every sport you play."],
+];
+
+function proLock(title, blurb) {
+  return `<section class="panel pad pro-lock">
+    <div class="block-head tight"><h3>${title}</h3><span class="pro-tag">PRO</span></div>
+    <p class="muted small">${blurb}</p>
+    <a class="btn primary" href="#/plans">Unlock with Pro</a>
+  </section>`;
+}
+
+function viewPaywall() {
   const plans = state.plans;
-  const sel = plans.find((p) => p.id === state.plan) || plans[1];
+  const sel = plans.find((p) => p.id === state.plan) || plans[0];
   const native = isNative();
   const live = billing.enabled;
+  const pro = billing.isPro();
   const active = billing.activeLabel();
   const cta = sel.trial ? "Start my 7-day free trial" : `Buy lifetime for ${sel.price}`;
   const after = sel.trial ? `7 days free, then ${sel.price} per ${sel.per}. Cancel anytime before the trial ends and you won't be charged.` : `One payment of ${sel.price}. No subscription, no renewals.`;
@@ -809,14 +828,15 @@ function viewPaywall(previewOnly = false) {
   return `
   <div class="paywall" style="--img:url('${IMG.motm}')">
     <div class="pw-panel">
-      ${previewOnly ? `<a class="back" href="#/p/${meId()}">Profile</a>` : `<div class="lockup"><img class="logo-full" src="${IMG.logo}" alt="Who Cooked"></div>`}
-      <h1 class="auth-h">${active ? "You're a member" : "Your first week is on us"}</h1>
-      ${active ? `<p class="muted">${esc(active.plan)} plan${active.trial ? " (free trial)" : ""}${active.expires && active.renews ? `, renews ${new Date(active.expires).toLocaleDateString()}` : active.expires ? `, ends ${new Date(active.expires).toLocaleDateString()}` : ""}.</p>` : `
+      <a class="back" href="#/p/${meId()}">Profile</a>
+      <img class="logo-full" src="${IMG.logo}" alt="Who Cooked">
+      <h1 class="auth-h">${active ? "You're Pro" : "Go Pro"}</h1>
+      <p class="muted">Playing, rating and MOTM are free for everyone. Pro is for the stat heads.</p>
+      ${active ? `<p class="muted">${esc(active.plan)} plan${active.trial ? " (free trial)" : ""}${active.expires && active.renews ? `, renews ${new Date(active.expires).toLocaleDateString()}` : active.expires ? `, ends ${new Date(active.expires).toLocaleDateString()}` : ""}.</p>` : ""}
       <ul class="pw-perks">
-        <li>${icon("star")}<span>Rate your teammates and find out what they really think of you</span></li>
-        <li>${icon("trophy")}<span>Man of the match, badges, seasons and the leaderboard</span></li>
-        <li>${icon("users")}<span>Unlimited games, formations, stats, banter and match cards</span></li>
-      </ul>`}
+        ${PRO_PERKS.map(([ic, t, d]) => `<li>${icon(ic)}<span><b>${t}.</b> ${d}</span></li>`).join("")}
+      </ul>
+      ${active ? "" : `
       <div class="plans" role="radiogroup" aria-label="Plans">
         ${plans.map((p) => `
         <button type="button" class="plan ${p.id === sel.id ? "on" : ""}" data-plan="${p.id}" role="radio" aria-checked="${p.id === sel.id}">
@@ -827,13 +847,13 @@ function viewPaywall(previewOnly = false) {
         </button>`).join("")}
       </div>
       <button class="btn primary block big" id="pw-buy">${cta}</button>
-      <p class="pw-after">${after}</p>
-      ${!live ? `<p class="demo-note">Preview: payments switch on once the App Store and Stripe are connected.</p>` : ""}
+      <p class="pw-after">${after}</p>`}
+      ${!live ? `<div class="demo-note">Payments switch on once the App Store and Stripe are connected. Until then you can preview Pro on this device.
+        <button class="btn ${pro ? "quiet" : ""} mt" id="pw-preview">${pro ? "Turn off Pro preview" : "Preview Pro"}</button></div>` : ""}
       <div class="pw-links">
         <button class="linkish" id="pw-restore">${native ? "Restore purchases" : "Already subscribed? Refresh"}</button>
         <a href="terms.html" target="_blank" rel="noopener">Terms</a>
         <a href="privacy.html" target="_blank" rel="noopener">Privacy</a>
-        ${previewOnly ? "" : `<button class="linkish" id="pw-out">Log out</button>`}
       </div>
       <p class="pw-legal">${legal}</p>
     </div>
@@ -842,17 +862,21 @@ function viewPaywall(previewOnly = false) {
 
 function bindPaywall() {
   $$("[data-plan]").forEach((b) => b.addEventListener("click", () => { state.plan = b.dataset.plan; rerenderKeepScroll(); }));
-  $("#pw-buy").addEventListener("click", (e) => act(e.currentTarget, async () => {
+  $("#pw-buy")?.addEventListener("click", (e) => act(e.currentTarget, async () => {
     if (!billing.enabled) throw new Error("Payments switch on once the App Store and Stripe are connected.");
     const ok = await billing.purchase(state.plan, state.me?.email);
-    if (ok) { toast("You're in. Welcome to Who Cooked."); location.hash = "#/"; render(); }
+    if (ok) { toast("You're Pro. Enjoy the stats."); location.hash = `#/p/${meId()}`; render(); }
   }));
   $("#pw-restore").addEventListener("click", (e) => act(e.currentTarget, async () => {
     const ok = await billing.restore();
-    toast(ok ? "Membership restored" : "No active membership found for this account.");
-    if (ok) { location.hash = "#/"; render(); }
+    toast(ok ? "Pro restored" : "No active Pro plan found for this account.");
+    if (ok) rerenderKeepScroll();
   }));
-  $("#pw-out")?.addEventListener("click", async () => { await billing.logOut(); await store.signOut(); await reload(); render(); });
+  $("#pw-preview")?.addEventListener("click", () => {
+    billing.previewPro = !billing.previewPro;
+    toast(billing.previewPro ? "Pro preview on for this device" : "Pro preview off");
+    rerenderKeepScroll();
+  });
 }
 
 /* ============================================================
@@ -1738,6 +1762,42 @@ function bindSquad() {
    Profile
    ============================================================ */
 
+function headToHead(a, b) {
+  const idx = ratingIndex();
+  const out = { together: { w: 0, l: 0, d: 0 }, against: { w: 0, l: 0, d: 0 }, mine: [], theirs: [], higher: 0, lower: 0, shared: 0 };
+  for (const g of state.games) {
+    if (g.status !== "final") continue;
+    const sa = teamOf(g, a), sb = teamOf(g, b);
+    if (!sa || !sb) continue;
+    out.shared++;
+    const w = winner(g);
+    const bucket = sa === sb ? out.together : out.against;
+    if (w === "D") bucket.d++; else if (w === sa) bucket.w++; else bucket.l++;
+    const ra = ratingFor(idx, g, a), rb = ratingFor(idx, g, b);
+    if (ra != null && rb != null) {
+      out.mine.push(ra); out.theirs.push(rb);
+      if (ra > rb) out.higher++; else if (ra < rb) out.lower++;
+    }
+  }
+  return out;
+}
+
+function h2hPanel(id, h) {
+  const rec = (r) => `${r.w}-${r.l}${r.d ? "-" + r.d : ""}`;
+  const name = esc(firstName(id));
+  return `<section class="panel pad">
+    <div class="block-head tight"><h3>Head to head with ${name}</h3><span class="pro-tag">PRO</span></div>
+    ${!h.shared ? `<p class="muted">You haven't played a finished game with ${name} yet.</p>` : `
+    <div class="statgrid h2h">
+      <div><b>${h.shared}</b><small>Games vs or with</small></div>
+      <div><b>${rec(h.together)}</b><small>As teammates</small></div>
+      <div><b>${rec(h.against)}</b><small>Against ${name}</small></div>
+      <div><b>${h.mine.length ? `${fmt(avg(h.mine))} / ${fmt(avg(h.theirs))}` : "–"}</b><small>Avg rating: you / ${name}</small></div>
+      <div><b>${h.higher}-${h.lower}</b><small>Higher rating: you / ${name}</small></div>
+    </div>`}
+  </section>`;
+}
+
 function viewProfile(id) {
   const u = user(id);
   if (!u) return `<div class="empty">Player not found. <a href="#/squad">See the squad</a></div>`;
@@ -1751,6 +1811,9 @@ function viewProfile(id) {
     const shared = state.games.filter((g) => g.status === "final" && teamOf(g, id) && teamOf(g, meId()));
     return { total: shared.length, same: shared.filter((g) => teamOf(g, id) === teamOf(g, meId())).length };
   })();
+  const pro = billing.isPro();
+  const seasons = [...new Set(s.games.map((x) => seasonKey(x.g.date)))].sort().reverse().map((k) => ({ key: k, s: playerSummary(id, "all", k) }));
+  const h2h = mine || !pro ? null : headToHead(meId(), id);
   const badges = BADGES.map((b) => ({ ...b, earned: b.test(s) }));
   const earned = badges.filter((b) => b.earned).length;
   const sportRows = Object.entries(s.bySport).map(([sp, d]) => {
@@ -1797,11 +1860,11 @@ function viewProfile(id) {
     </form>
   </section>
   <section class="panel pad">
-    <h3>Membership</h3>
+    <div class="block-head tight"><h3>Plan</h3>${pro ? `<span class="pro-tag">PRO</span>` : ""}</div>
     ${(() => {
       const a = billing.activeLabel();
-      if (!billing.enabled) return `<p class="muted small">Payments aren't switched on yet. <a class="inline-link" href="#/plans">See the plans</a></p>`;
-      if (!a) return `<p class="muted small">No active membership. <a class="inline-link" href="#/plans">See the plans</a></p>`;
+      if (!billing.enabled) return `<p class="muted small">${pro ? "Previewing Pro on this device." : "Free plan."} <a class="inline-link" href="#/plans">${pro ? "Pro settings" : "See what Pro adds"}</a></p>`;
+      if (!a) return `<p class="muted small">Free plan. Rating trend, season recaps, head to head and stats by sport come with Pro. <a class="inline-link" href="#/plans">Go Pro</a></p>`;
       const url = billing.manageUrl();
       return `<p>${esc(a.plan)} plan${a.trial ? ", free trial" : ""}${a.expires ? `<span class="muted small">, ${a.renews ? "renews" : "ends"} ${new Date(a.expires).toLocaleDateString()}</span>` : ""}</p>
         <div class="inline mt">${url && a.plan !== "Lifetime" ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Manage or cancel</a>` : ""}<a class="btn quiet" href="#/plans">Plans</a></div>`;
@@ -1826,15 +1889,24 @@ function viewProfile(id) {
     <section class="panel pad">
       <h3>Form</h3>
       <div class="form-strip">${s.games.slice(0, 5).reverse().map((x) => `<a href="#/g/${x.g.id}" title="${esc(relDate(x.g.date))}">${x.revealed ? badge(x.rating) : `<span class="badge r-none hidden-r">?</span>`}<small class="res ${x.res}">${x.res}</small></a>`).join("") || `<span class="muted">No games yet</span>`}</div>
-      ${trend.length > 1 ? `<h4 class="mt">Rating trend</h4>${sparkline(trend)}` : ""}
+      ${pro && trend.length > 1 ? `<h4 class="mt">Rating trend</h4>${sparkline(trend)}` : ""}
     </section>
-    <section class="panel pad">
-      <h3>Best game</h3>
+    ${!pro ? proLock("Best game &amp; rating trend", "Every rating you've had on one chart, plus the night you cooked hardest.") : `<section class="panel pad">
+      <div class="block-head tight"><h3>Best game</h3><span class="pro-tag">PRO</span></div>
       ${s.best ? `<a class="best" href="#/g/${s.best.g.id}">${badge(s.best.rating, "xl")}<div><b>${esc(s.best.g.teamA.name)} ${s.best.g.teamA.score}–${s.best.g.teamB.score} ${esc(s.best.g.teamB.name)}</b>
         ${meta(esc(relDate(s.best.g.date)), esc(statLine(s.best.g.sport, s.best.stats)))}</div></a>` : `<p class="muted">Shows up after a revealed game with at least ${MIN_VOTES} votes.</p>`}
-    </section>
+    </section>`}
   </div>
-  ${sportRows ? `<section class="panel pad"><h3>By sport</h3>${sportRows}</section>` : ""}
+  ${mine ? "" : !pro ? proLock(`Head to head with ${esc(firstName(id))}`, "Your record together and against each other, and who rates higher when you share the pitch.") : h2hPanel(id, h2h)}
+  ${seasons.length ? !pro ? proLock("Season recaps", "Month by month: games, record, average rating, MOTMs and best night.") : `
+  <section class="panel pad">
+    <div class="block-head tight"><h3>Season recaps</h3><span class="pro-tag">PRO</span></div>
+    <div class="table-scroll"><table class="recap">
+      <thead><tr><th>Season</th><th>Games</th><th>Record</th><th>MOTM</th><th>Best</th><th>Avg</th></tr></thead>
+      <tbody>${seasons.map(({ key, s: x }) => `<tr><td>${esc(seasonLabel(key))}</td><td>${x.games.length}</td><td>${x.wins}-${x.losses}${x.draws ? "-" + x.draws : ""}</td><td>${x.motms}</td><td>${x.best ? fmt(x.best.rating) : "–"}</td><td>${badge(x.avg)}</td></tr>`).join("")}</tbody>
+    </table></div>
+  </section>` : ""}
+  ${sportRows ? !pro ? proLock("Stats by sport", "Per-game averages for every sport you play.") : `<section class="panel pad"><div class="block-head tight"><h3>By sport</h3><span class="pro-tag">PRO</span></div>${sportRows}</section>` : ""}
   ${comingUp.length ? `
   <section class="panel pad">
     <h3>Coming up</h3>
@@ -2040,19 +2112,11 @@ function render() {
 
   if (route === "plans") {
     document.body.classList.add("signed-out");
-    main.innerHTML = viewPaywall(true);
+    main.innerHTML = viewPaywall();
     bindPaywall();
     if (billing.enabled) billing.loadPlans().then((p) => { if (location.hash.startsWith("#/plans") && JSON.stringify(p) !== JSON.stringify(state.plans)) { state.plans = p; rerenderKeepScroll(); } });
     return;
   }
-  if (billing.enabled && !billing.isPro()) {
-    document.body.classList.add("signed-out");
-    main.innerHTML = viewPaywall(false);
-    bindPaywall();
-    billing.loadPlans().then((p) => { if (!billing.isPro() && JSON.stringify(p) !== JSON.stringify(state.plans)) { state.plans = p; rerenderKeepScroll(); } });
-    return;
-  }
-
   const editorKey = route === "new" ? "new" : route === "g" && (sub === "join" || sub === "edit") ? `${param}/${sub}` : null;
   if (editorKey && editorKey !== lastKey) startEditor(route === "new" ? "create" : sub, param);
   lastKey = editorKey;

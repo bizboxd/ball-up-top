@@ -643,3 +643,17 @@ table.leaders th:first-child, table.leaders td:first-child { padding-left: 18px;
 .danger-zone h3 { margin-bottom: 4px; }
 .danger-zone .btn { margin-top: 10px; }
 .inline-link { color: var(--ice); }
+
+/* ---------- Pro ---------- */
+.pro-tag { padding: 2px 7px; border-radius: 4px; background: var(--blue); color: #fff; font: 800 11px/1.4 var(--body); letter-spacing: .06em; }
+.pro-lock { position: relative; overflow: hidden; background: linear-gradient(160deg, rgba(43, 107, 255, .12), transparent 60%), var(--s1); border-color: rgba(43, 107, 255, .35); }
+.pro-lock p { margin: 6px 0 14px; max-width: 46ch; }
+.pw-panel .logo-full { margin-top: 6px; }
+.pw-perks b { color: var(--text); }
+.demo-note .btn { display: inline-flex; }
+.table-scroll { overflow-x: auto; margin-top: 12px; }
+.recap { width: 100%; border-collapse: collapse; font-size: 14px; white-space: nowrap; }
+.recap th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 0 10px 8px 0; }
+.recap td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line); }
+.recap td:last-child, .recap th:last-child { text-align: right; padding-right: 0; }
+.h2h { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
