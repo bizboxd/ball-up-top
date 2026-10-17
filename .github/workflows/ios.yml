@@ -148,6 +148,33 @@ jobs:
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey.p8"
 
+      # Each CI run gets a throwaway "Created via API" development certificate from automatic signing.
+      # Apple caps how many an account can hold, so clear out the old ones first. Distribution certificates are never touched.
+      - name: Clean up old CI development certificates
+        if: env.HAS_SIGNING == 'true'
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet pyjwt cryptography
+          python3 - <<'PY2'
+          import json, os, time, urllib.request, jwt
+          key = open(os.path.join(os.environ["RUNNER_TEMP"], "keys", "AuthKey.p8")).read()
+          tok = jwt.encode({"iss": os.environ["ISSUER"], "iat": int(time.time()), "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+                           key, algorithm="ES256", headers={"kid": os.environ["KEY_ID"], "typ": "JWT"})
+          def call(method, url):
+              req = urllib.request.Request(url, method=method, headers={"Authorization": f"Bearer {tok}"})
+              with urllib.request.urlopen(req) as r:
+                  body = r.read()
+                  return json.loads(body) if body else None
+          data = call("GET", "https://api.appstoreconnect.apple.com/v1/certificates?filter[certificateType]=DEVELOPMENT,IOS_DEVELOPMENT&limit=200")["data"]
+          old = [c for c in data if c["attributes"].get("name") == "Created via API"]
+          print(f"{len(data)} development certificates, {len(old)} created by CI")
+          for c in old:
+              call("DELETE", f"https://api.appstoreconnect.apple.com/v1/certificates/{c['id']}")
+              print("Revoked", c["id"], c["attributes"].get("expirationDate"))
+          PY2
+
       - name: Archive (signed)
         if: env.HAS_SIGNING == 'true'
         env:
