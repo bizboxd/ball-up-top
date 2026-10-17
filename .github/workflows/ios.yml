@@ -168,7 +168,9 @@ jobs:
                   body = r.read()
                   return json.loads(body) if body else None
           data = call("GET", "https://api.appstoreconnect.apple.com/v1/certificates?filter[certificateType]=DEVELOPMENT,IOS_DEVELOPMENT&limit=200")["data"]
-          old = [c for c in data if c["attributes"].get("name") == "Created via API"]
+          for c in data[:3]:
+              a = c["attributes"]; print("example:", a.get("name"), "|", a.get("displayName"), "|", a.get("certificateType"))
+          old = [c for c in data if "Created via API" in f'{c["attributes"].get("name") or ""} {c["attributes"].get("displayName") or ""}']
           print(f"{len(data)} development certificates, {len(old)} created by CI")
           for c in old:
               call("DELETE", f"https://api.appstoreconnect.apple.com/v1/certificates/{c['id']}")
