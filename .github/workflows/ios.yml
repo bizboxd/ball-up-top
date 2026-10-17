@@ -64,7 +64,9 @@ jobs:
           node-version: 22
 
       - name: Install
-        run: npm install --no-audit --no-fund
+        run: |
+          npm install --no-audit --no-fund
+          npm ls --depth=0 || true
 
       - name: Ads plugin (only when ADMOB_APP_ID is set)
         if: ${{ vars.ADMOB_APP_ID != '' }}
@@ -158,7 +160,9 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" \
             CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM" \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} MARKETING_VERSION=$MARKETING_VERSION | tail -n 60
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} MARKETING_VERSION=$MARKETING_VERSION > "$RUNNER_TEMP/archive.log" 2>&1 \
+            || { echo "::group::Errors"; grep -nE "error:|fatal|Supported platforms|requires|deployment target" "$RUNNER_TEMP/archive.log" | head -n 80; echo "::endgroup::"; tail -n 40 "$RUNNER_TEMP/archive.log"; exit 1; }
+          tail -n 15 "$RUNNER_TEMP/archive.log"
 
       - name: Upload to App Store Connect
         if: env.HAS_SIGNING == 'true'
