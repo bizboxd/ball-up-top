@@ -1500,7 +1500,8 @@ function viewGame(id) {
       </div>
       <div class="side ${w === "B" ? "win" : ""}">${g.teamB ? `${avatar(g.teamB.captainId, "lg")}<span>${esc(g.teamB.name)}</span>` : `<span class="avatar lg ghost"></span><span class="muted">Open</span>`}</div>
     </div>
-    <div class="sb-status">${g.status === "final" ? (w === "D" ? "Draw" : "Full time") : g.status === "open" ? "Waiting for a second captain" : "Upcoming"}</div>
+    ${g.status === "final" && seriesGames(g) ? `<div class="series-line"><span class="sk">Series</span>${seriesLine(g)}</div>` : ""}
+    <div class="sb-status">${g.status === "final" ? (w === "D" ? (seriesGames(g) ? "Series tied" : "Draw") : seriesGames(g) ? "Series final" : "Full time") : g.status === "open" ? "Waiting for a second captain" : "Upcoming"}</div>
     ${g.status === "final" ? `<button class="btn share-btn" id="share-card">${icon("share")} Share match card</button>` : ""}
   </section>
 
@@ -1800,40 +1801,100 @@ async function openShareCard(g) {
    Final score + box score
    ============================================================ */
 
+// A series (best of 3, etc.) keeps each game's score; the headline score is games won.
+const seriesGames = (g) => {
+  const a = g.teamA?.games, b = g.teamB?.games;
+  return Array.isArray(a) && Array.isArray(b) && a.length > 1 ? a.map((x, i) => [x, b[i]]) : null;
+};
+function seriesLine(g) {
+  const list = seriesGames(g);
+  return list ? list.map(([a, b], i) => `<span class="sg"><em>G${i + 1}</em> ${esc(a)}–${esc(b)}</span>`).join("") : "";
+}
+
+function resultRow(i, a = "", b = "", g) {
+  return `<div class="score-input series-row" data-row>
+    <span class="tname">${i === 0 ? esc(g.teamA.name) : ""}<em class="gnum">Game ${i + 1}</em></span>
+    <input class="tscore" data-a type="number" min="0" inputmode="numeric" required value="${esc(a)}" placeholder="0" aria-label="Game ${i + 1} ${esc(g.teamA.name)}">
+    <i></i>
+    <input class="tscore" data-b type="number" min="0" inputmode="numeric" required value="${esc(b)}" placeholder="0" aria-label="Game ${i + 1} ${esc(g.teamB.name)}">
+    <span class="tname right">${i === 0 ? esc(g.teamB.name) : ""}<button type="button" class="link-btn" data-rm aria-label="Remove game ${i + 1}">Remove</button></span>
+  </div>`;
+}
+
 function viewResult(id) {
   const g = state.games.find((x) => x.id === id);
   if (!g || !g.teamB) return `<div class="empty">This game isn't ready for a score yet. <a href="#/g/${id}">Back to the game</a></div>`;
   if (!captainOf(g, meId())) return `<div class="empty">Only the two captains can post the score. <a href="#/g/${id}">Back to the game</a></div>`;
+  const list = seriesGames(g);
+  const rows = (list || [[g.teamA.score ?? "", g.teamB.score ?? ""]]).map(([a, b], i) => resultRow(i, a, b, g)).join("");
   return `
   <a class="back" href="#/g/${id}">Game</a>
   <h1 class="page-title">Final score</h1>
   <form id="result-form" class="stack">
-    <section class="panel pad">
-      <div class="score-input">
-        <span class="tname">${esc(g.teamA.name)}</span>
-        <input class="tscore" name="a" id="r-a" type="number" min="0" inputmode="numeric" required value="${g.teamA.score ?? ""}" placeholder="0" aria-label="${esc(g.teamA.name)} score">
-        <i></i>
-        <input class="tscore" name="b" id="r-b" type="number" min="0" inputmode="numeric" required value="${g.teamB.score ?? ""}" placeholder="0" aria-label="${esc(g.teamB.name)} score">
-        <span class="tname right">${esc(g.teamB.name)}</span>
+    <div class="seg2 full">
+      <button type="button" data-mode="single" class="${list ? "" : "on"}">Single game</button>
+      <button type="button" data-mode="series" class="${list ? "on" : ""}">Series</button>
+    </div>
+    <section class="panel pad ${list ? "is-series" : ""}" id="score-rows">
+      <div id="rows">${rows}</div>
+      <div class="series-foot">
+        <button type="button" class="btn quiet small" id="add-game">+ Add game</button>
+        <span class="muted small" id="series-tally"></span>
       </div>
     </section>
-    <p class="muted small">Captains only post the score. Each player adds their own stats from the game page.${g.status === "final" ? "" : " Posting the score opens 24 hours of voting. Ratings stay hidden until then, or until everyone has voted."}</p>
+    <p class="muted small">Captains only post the score. For a series, log every game; the result is games won, and everyone rates once for the whole run. Each player adds their own stats from the game page.${g.status === "final" ? "" : " Posting the score opens 24 hours of voting. Ratings stay hidden until then, or until everyone has voted."}</p>
     <button class="btn primary block big">${g.status === "final" ? "Save changes" : "Blow the whistle"}</button>
   </form>`;
 }
 
 function bindResult(id) {
-  $("#result-form")?.addEventListener("submit", (e) => {
+  const f = $("#result-form");
+  if (!f) return;
+  const g = state.games.find((x) => x.id === id);
+  const box = $("#score-rows"), rowsEl = $("#rows");
+  const series = () => box.classList.contains("is-series");
+  const read = () => [...rowsEl.querySelectorAll("[data-row]")].map((r) => [Number($("[data-a]", r).value) || 0, Number($("[data-b]", r).value) || 0]);
+  const tally = () => {
+    const list = read();
+    const wa = list.filter(([a, b]) => a > b).length, wb = list.filter(([a, b]) => b > a).length;
+    $("#series-tally").textContent = series() ? `Series: ${g.teamA.name} ${wa}–${wb} ${g.teamB.name}` : "";
+    return [wa, wb];
+  };
+  const redraw = (list) => { rowsEl.innerHTML = list.map(([a, b], i) => resultRow(i, a, b, g)).join(""); tally(); };
+  const current = () => [...rowsEl.querySelectorAll("[data-row]")].map((r) => [$("[data-a]", r).value, $("[data-b]", r).value]);
+  f.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+    f.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("on", x === b));
+    const on = b.dataset.mode === "series";
+    box.classList.toggle("is-series", on);
+    const list = current();
+    if (on && list.length < 2) { while (list.length < 3) list.push(["", ""]); }
+    redraw(on ? list : list.slice(0, 1));
+  }));
+  $("#add-game").addEventListener("click", () => redraw([...current(), ["", ""]]));
+  rowsEl.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-rm]")) return;
+    const list = current();
+    if (list.length <= 2) return toast("A series needs at least 2 games");
+    list.splice([...rowsEl.children].indexOf(e.target.closest("[data-row]")), 1);
+    redraw(list);
+  });
+  rowsEl.addEventListener("input", tally);
+  tally();
+  f.addEventListener("submit", (e) => {
     e.preventDefault();
-    const f = e.target;
-    const g = state.games.find((x) => x.id === id);
-    act($("button", f), async () => {
-      await store.updateGame(id, {
-        status: "final",
-        finalAt: g.finalAt || new Date().toISOString(),
-        teamA: { ...g.teamA, score: Number(f.a.value) || 0 },
-        teamB: { ...g.teamB, score: Number(f.b.value) || 0 },
-      });
+    const list = read();
+    let teamA, teamB;
+    if (series() && list.length > 1) {
+      const [wa, wb] = tally();
+      teamA = { ...g.teamA, score: wa, games: list.map((x) => x[0]) };
+      teamB = { ...g.teamB, score: wb, games: list.map((x) => x[1]) };
+    } else {
+      const { games: _a, ...ta } = g.teamA, { games: _b, ...tb } = g.teamB;
+      teamA = { ...ta, score: list[0][0] };
+      teamB = { ...tb, score: list[0][1] };
+    }
+    act($("button.primary", f), async () => {
+      await store.updateGame(id, { status: "final", finalAt: g.finalAt || new Date().toISOString(), teamA, teamB });
       await reload();
       location.hash = `#/g/${id}`;
       toast(g.status === "final" ? "Score saved" : "Full time. Add your stats and rate your team.");
