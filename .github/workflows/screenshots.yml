@@ -38,6 +38,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add appstore/screenshots
+          mkdir -p fastlane/screenshots/en-US
+          cp appstore/screenshots/*.png fastlane/screenshots/en-US/
+          git add appstore/screenshots fastlane/screenshots
           git diff --cached --quiet || git commit -m "Update App Store screenshots [skip ci]"
           git push

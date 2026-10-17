@@ -23,10 +23,22 @@ async def settle(pg, ms=1500):
     await pg.evaluate("document.fonts.ready")
     await pg.wait_for_timeout(ms)
 
+DEVICES = {
+    # 6.9" iPhone: 1290x2796
+    "": {"viewport": {"width": 430, "height": 932}, "device_scale_factor": 3, "is_mobile": True, "has_touch": True},
+    # 13" iPad: 2064x2752
+    "ipad-": {"viewport": {"width": 1032, "height": 1376}, "device_scale_factor": 2, "is_mobile": True, "has_touch": True},
+}
+
 async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
-        ctx = await b.new_context(viewport={"width": 430, "height": 932}, device_scale_factor=3, is_mobile=True, has_touch=True)
+        for prefix, opts in DEVICES.items():
+            await shoot(b, prefix, opts)
+        await b.close()
+
+async def shoot(b, prefix, opts):
+        ctx = await b.new_context(**opts)
         await ctx.add_init_script(NATIVE_STUB)
         pg = await ctx.new_page()
         await pg.goto(BASE)
@@ -38,7 +50,7 @@ async def main():
         await pg.keyboard.press("Enter")
         await pg.wait_for_timeout(3500)  # let the welcome toast clear
         await settle(pg, 500)
-        await pg.screenshot(path=f"{OUT}/02-feed.png")
+        await pg.screenshot(path=f"{OUT}/{prefix}02-feed.png")
 
         db = json.loads(await pg.evaluate("localStorage.getItem('ballUpTop.v2')"))
         games = [g for g in db["games"] if g["status"] == "final"]
@@ -47,22 +59,22 @@ async def main():
 
         await pg.goto(BASE + f"#/g/{revealed['id']}")
         await settle(pg)
-        await pg.screenshot(path=f"{OUT}/03-match.png")
+        await pg.screenshot(path=f"{OUT}/{prefix}03-match.png")
 
         await pg.goto(BASE + f"#/g/{voting['id']}")
         await settle(pg, 800)
         await pg.evaluate("document.getElementById('rate')?.scrollIntoView({block: 'start'}); window.scrollBy(0, -70)")
         await pg.wait_for_timeout(800)
-        await pg.screenshot(path=f"{OUT}/04-rate.png")
+        await pg.screenshot(path=f"{OUT}/{prefix}04-rate.png")
 
         me = await pg.evaluate("document.getElementById('nav-me').getAttribute('href')")
         await pg.goto(BASE + me)
         await settle(pg)
-        await pg.screenshot(path=f"{OUT}/05-profile.png")
+        await pg.screenshot(path=f"{OUT}/{prefix}05-profile.png")
 
         await pg.goto(BASE + "#/leaders")
         await settle(pg)
-        await pg.screenshot(path=f"{OUT}/06-leaders.png")
-        await b.close()
+        await pg.screenshot(path=f"{OUT}/{prefix}06-leaders.png")
+        await ctx.close()
 
 asyncio.run(main())
