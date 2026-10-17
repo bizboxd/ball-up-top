@@ -50,6 +50,15 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Some runner images ship this Xcode without the iOS platform; install it when missing.
+      - name: Make sure the iOS platform is installed
+        run: |
+          if ! xcodebuild -showsdks 2>/dev/null | grep -qi "iphoneos"; then
+            echo "iOS platform missing, downloading"
+            sudo xcodebuild -downloadPlatform iOS
+          fi
+          xcodebuild -showsdks
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
