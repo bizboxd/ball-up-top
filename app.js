@@ -1493,6 +1493,7 @@ function viewGame(id) {
   <a class="back" href="#/">Feed</a>
   <section class="scoreboard" style="--img:url('${cfg.img}')">
     <div class="sb-meta">${meta(`${icon(cfg.icon)} ${cfg.label}`, formatLabel(g), esc(relDate(g.date)), fmtTime(g.time), esc(g.location))}</div>
+    ${myCap ? `<button type="button" class="btn quiet small sb-edit" id="edit-when">${icon("clock")} Change date, time or place</button>` : ""}
     <div class="big-score">
       <div class="side ${w === "A" ? "win" : ""}">${avatar(g.teamA.captainId, "lg")}<span>${esc(g.teamA.name)}</span></div>
       <div class="bug ${g.status === "final" ? "" : "pre"}">
@@ -1504,6 +1505,17 @@ function viewGame(id) {
     <div class="sb-status">${g.status === "final" ? (w === "D" ? (seriesGames(g) ? "Series tied" : "Draw") : seriesGames(g) ? "Series final" : "Full time") : g.status === "open" ? "Waiting for a second captain" : "Upcoming"}</div>
     ${g.status === "final" ? `<button class="btn share-btn" id="share-card">${icon("share")} Share match card</button>` : ""}
   </section>
+  ${myCap ? `
+  <form class="panel pad stack" id="when-form" hidden>
+    <h3>When and where</h3>
+    <div class="row3">
+      <label>Date<input type="date" name="date" value="${esc(g.date)}" required></label>
+      <label>Kick-off<input type="time" name="time" value="${esc(g.time || "")}"></label>
+      <label>Where<input name="location" placeholder="Park, cage, gym" value="${esc(g.location || "")}"></label>
+    </div>
+    <p class="muted small">Everyone in the game sees the new time right away.</p>
+    <div class="inline"><button class="btn primary">Save</button><button type="button" class="btn quiet" id="when-cancel">Cancel</button></div>
+  </form>` : ""}
 
   ${top ? `
   <section class="motm-banner" style="--img:url('${IMG.motm}')">
@@ -1642,6 +1654,24 @@ function bindGame(id) {
     await reload();
     rerenderKeepScroll();
   })));
+
+  const whenForm = $("#when-form");
+  if (whenForm) {
+    const toggle = (show) => { whenForm.hidden = !show; $("#edit-when").hidden = show; if (show) whenForm.scrollIntoView({ block: "nearest", behavior: "smooth" }); };
+    $("#edit-when")?.addEventListener("click", () => toggle(true));
+    $("#when-cancel").addEventListener("click", () => toggle(false));
+    whenForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const f = e.target;
+      if (!f.date.value) return toast("Pick a date");
+      act($("button.primary", f), async () => {
+        await store.updateGame(id, { date: f.date.value, time: f.time.value, location: f.location.value.trim() });
+        await reload();
+        rerenderKeepScroll();
+        toast("Game updated");
+      });
+    });
+  }
 
   const del = $("#del-game");
   del?.addEventListener("click", () => {
