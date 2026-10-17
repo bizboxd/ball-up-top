@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } fr
 const out = "www";
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out);
-for (const f of ["index.html", "app.js", "store.js", "billing.js", "ads.js", "native.js", "reserved.js", "config.js", "styles.css", "privacy.html", "terms.html", "support.html", "favicon.png", "apple-touch-icon.png", "logo.png"]) cpSync(f, `${out}/${f}`);
+for (const f of ["index.html", "app.js", "store.js", "billing.js", "ads.js", "native.js", "native-extras.js", "places.js", "reserved.js", "config.js", "styles.css", "privacy.html", "terms.html", "support.html", "favicon.png", "apple-touch-icon.png", "logo.png"]) cpSync(f, `${out}/${f}`);
 if (existsSync("assets")) cpSync("assets", `${out}/assets`, { recursive: true });
 
 // The iPhone app ships its libraries inside the app instead of downloading them at launch.

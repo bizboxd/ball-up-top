@@ -1,6 +1,8 @@
 import { createStore } from "./store.js";
 import { billing, PLANS, isNative } from "./billing.js";
 import { ads } from "./ads.js";
+import { reminders, addToCalendar, shareLink, gameUrl } from "./native-extras.js";
+import { mountPicker, mountNearby, myLocation, distanceKm, fmtDistance } from "./places.js";
 
 /* ============================================================
    Config
@@ -58,6 +60,8 @@ const ICON = {
   flag: '<path d="M5 21V4M5 4.5h11l-2 3.5 2 3.5H5"/>',
   user: '<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/>',
   star: '<path d="M12 3.2l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.2l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
 };
 function icon(name, cls = "") {
@@ -71,6 +75,7 @@ function icon(name, cls = "") {
 
 const store = createStore();
 const state = {
+  nearFilter: "all", nearMe: null,
   me: null, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [],
   replyTo: null, plan: "$rc_monthly", plans: PLANS,
   feedFilter: "all", feedScope: "friends", leadersSport: "all", leadersSeason: null, squadTab: "friends",
@@ -98,6 +103,20 @@ async function reload() {
     if (g) g.stats = { ...(g.stats || {}), [r.userId]: r.stats };
   }
   Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments, playerStats, blocks });
+  syncReminders();
+}
+
+// iPhone: a local reminder 2 hours before every upcoming game you're confirmed for.
+function syncReminders(ask = false) {
+  if (!state.me || !isNative()) return;
+  const today = localDate();
+  const items = state.games
+    .filter((g) => g.status !== "final" && g.date >= today && lineup(g).confirmed.includes(meId()))
+    .map((g) => {
+      const lu = lineup(g);
+      return { g, body: `${SPORTS[g.sport]?.label || "Pickup"}${g.time ? ` at ${fmtTime(g.time)}` : " today"}${g.location ? `, ${g.location}` : ""}. ${lu.confirmed.length} going.` };
+    });
+  reminders.sync(items, ask);
 }
 
 /* ============================================================
@@ -268,6 +287,23 @@ const formatLabel = (g) => `${g.teamA.playerIds.length}v${g.teamB ? g.teamB.play
 const gamePlayers = (g) => [...g.teamA.playerIds, ...(g.teamB?.playerIds || [])];
 const rsvpsFor = (g) => state.rsvps.filter((r) => r.gameId === g.id);
 const rsvpOf = (g, id) => state.rsvps.find((r) => r.gameId === g.id && r.userId === id)?.status || null;
+// Who's actually playing. Rostered players hold spots first, then "in" RSVPs in the order they said yes.
+// Past the creator's player cap, everyone else waits in line and moves up automatically if someone drops.
+function lineup(g) {
+  const roster = gamePlayers(g);
+  const list = rsvpsFor(g);
+  const ins = list.filter((r) => r.status === "in" && !roster.includes(r.userId)).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const order = [...new Set([...roster, ...ins.map((r) => r.userId)])];
+  const cap = g.cap || null;
+  return {
+    cap, order,
+    confirmed: cap ? order.slice(0, cap) : order,
+    waitlist: cap ? order.slice(cap) : [],
+    maybe: list.filter((r) => r.status === "maybe" && !roster.includes(r.userId)).map((r) => r.userId),
+    out: list.filter((r) => r.status === "out" && !roster.includes(r.userId)).map((r) => r.userId),
+  };
+}
+const spotsText = (lu) => lu.cap ? `${lu.confirmed.length}/${lu.cap}` : `${lu.confirmed.length}`;
 const isBlocked = (id) => (state.blocks || []).includes(id);
 // Comments you reported are hidden for you straight away (remembered on this device).
 const hiddenKey = "wc.hiddenComments";
@@ -636,7 +672,9 @@ function gameRow(g, idx) {
   const w = winner(g);
   const top = motm(idx, g);
   const voting = votingOpen(g);
-  const ins = rsvpsFor(g).filter((r) => r.status === "in").length;
+  const lu = g.status !== "final" ? lineup(g) : null;
+  const full = lu?.cap && lu.confirmed.length >= lu.cap;
+  const inTag = lu ? `<span class="tk-sub">${full ? "Full" : `${spotsText(lu)} in`}${lu.waitlist.length ? ` +${lu.waitlist.length} waiting` : ""}</span>` : "";
   const line = (side) => {
     const t = teamObj(g, side);
     if (!t) return `<div class="tk-line open"><span class="avatar xs ghost"></span><span class="tk-name">Open spot</span><span class="tk-score"></span></div>`;
@@ -646,17 +684,45 @@ function gameRow(g, idx) {
       <span class="tk-score">${g.status === "final" ? esc(t.score) : ""}</span></div>`;
   };
   let side;
-  if (g.status === "open") side = `<span class="tag gold">Needs a captain</span>${ins ? `<span class="tk-sub">${ins} in</span>` : ""}`;
-  else if (g.status === "ready") side = `<span class="tag blue">Upcoming</span>${ins ? `<span class="tk-sub">${ins} in</span>` : ""}`;
+  if (g.status === "open") side = `<span class="tag gold">Needs a captain</span>${inTag}`;
+  else if (g.status === "ready") side = `<span class="tag blue">Upcoming</span>${inTag}`;
   else if (voting) side = `<span class="tag">Voting</span><span class="tk-sub">${icon("clock")} ${untilText(revealAt(g) - now())}</span>`;
   else if (top) side = `${avatar(top.playerId, "sm")}<span class="tk-motm"><small>MOTM</small>${esc(firstName(top.playerId))}</span>${badge(top.rating)}`;
   else side = `<span class="tk-sub">Full time</span>`;
-  return `
+  const row = `
   <a class="tk" href="#/g/${g.id}">
     <div class="tk-when">${icon(cfg.icon)}<b>${esc(relDate(g.date))}</b><small>${g.status === "final" ? formatLabel(g) : fmtTime(g.time) || formatLabel(g)}</small></div>
-    <div class="tk-teams">${line("A")}${line("B")}</div>
+    <div class="tk-teams">${line("A")}${line("B")}${g.isPublic ? `<span class="tk-pub">${icon("globe")} Public${g.location ? ` · ${esc(g.location)}` : ""}</span>` : ""}</div>
     <div class="tk-side">${side}</div>
   </a>`;
+  if (!lu || lu.order.slice(0, gamePlayers(g).length).includes(meId())) return row;
+  return `<div class="tk-wrap">${row}${quickRsvp(g, lu)}</div>`;
+}
+
+// RSVP buttons right on a feed card.
+function quickRsvp(g, lu = lineup(g)) {
+  const my = rsvpOf(g, meId());
+  const pos = lu.waitlist.indexOf(meId());
+  const status = my === "in" ? (pos >= 0 ? `Waitlist #${pos + 1}` : "You're in") : my === "maybe" ? "Maybe" : my === "out" ? "Out" : "";
+  const b = (k, label) => `<button type="button" class="qr ${my === k ? "on " + k : ""}" data-qrsvp="${k}" data-gid="${g.id}">${label}</button>`;
+  return `<div class="tk-rsvp">${status ? `<span class="qr-status ${my}">${status}</span>` : `<span class="qr-status muted">Going?</span>`}
+    ${b("in", lu.cap && lu.confirmed.length >= lu.cap && my !== "in" ? "Join waitlist" : "I'm in")}${b("maybe", "Maybe")}${b("out", "Can't")}</div>`;
+}
+
+async function doRsvp(gid, want, btn) {
+  const g = state.games.find((x) => x.id === gid);
+  if (!g) return;
+  const cur = rsvpOf(g, meId());
+  const next = cur === want ? null : want;
+  await act(btn, async () => {
+    await store.setRsvp(gid, meId(), next);
+    await reload();
+    rerenderKeepScroll();
+    const lu = lineup(state.games.find((x) => x.id === gid) || g);
+    const pos = lu.waitlist.indexOf(meId());
+    toast(!next ? "RSVP removed" : next === "in" ? (pos >= 0 ? `It's full. You're #${pos + 1} on the waitlist and move up if someone drops.` : "You're in") : next === "maybe" ? "Marked as maybe" : "Marked as out");
+    if (next === "in" && pos < 0) syncReminders(true);
+  });
 }
 
 function sportChips(active, attr) {
@@ -996,6 +1062,62 @@ function bindPaywall() {
    Feed
    ============================================================ */
 
+/* ============================================================
+   Nearby: public games on a map
+   ============================================================ */
+
+const publicGames = () => {
+  const today = localDate();
+  return state.games.filter((g) => g.isPublic && g.status !== "final" && g.lat != null && g.lng != null && g.date >= today && !isBlocked(g.createdBy));
+};
+
+function viewNearby() {
+  const sportOk = (g) => state.nearFilter === "all" || g.sport === state.nearFilter;
+  const list = publicGames().filter(sportOk);
+  const here = state.nearMe;
+  const rows = list.map((g) => ({ g, km: here ? distanceKm(here, g) : null }))
+    .sort((a, b) => (a.km ?? 0) - (b.km ?? 0) || (a.g.date + a.g.time).localeCompare(b.g.date + b.g.time));
+  return `
+  <div data-norefresh>
+  <h1 class="page-title">Nearby games</h1>
+  <p class="lead">Public pickup runs near you. RSVP to one, or host your own and anyone nearby can join.</p>
+  <a class="btn primary near-host" href="#/new/public">${icon("plus")} Host a public game</a>
+  ${sportChips(state.nearFilter, "near")}
+  <div class="near-map" id="near-map"><div class="muted small near-loading">Loading map</div></div>
+  <p class="muted small" id="near-loc">${here ? "" : `<button type="button" class="link-btn" id="near-me">${"Use my location"}</button> to sort games by distance.`}</p>
+  <section class="block">
+    ${rows.length ? `<div class="panel ticker">${rows.map(({ g, km }) => `
+      <div class="near-row">
+        ${km != null ? `<span class="near-dist">${icon("pin")} ${fmtDistance(km)}</span>` : ""}
+        ${gameRow(g, ratingIndex())}
+      </div>`).join("")}</div>`
+      : `<div class="empty">No public games coming up${state.nearFilter !== "all" ? ` for ${esc(SPORTS[state.nearFilter].label.toLowerCase())}` : ""} yet. <a href="#/new/public">Host one</a> and it shows up here for everyone nearby.</div>`}
+  </section>
+  </div>`;
+}
+
+let nearbyMap = null;
+function bindNearby() {
+  $$("[data-near]").forEach((b) => b.addEventListener("click", () => { state.nearFilter = b.dataset.near; render(); }));
+  const sportOk = (g) => state.nearFilter === "all" || g.sport === state.nearFilter;
+  const games = publicGames().filter(sportOk).map((g) => {
+    const lu = lineup(g);
+    return { g, html: `<a class="pop" href="#/g/${g.id}"><b>${esc(SPORTS[g.sport]?.label || "")} · ${esc(relDate(g.date))}${g.time ? ` ${fmtTime(g.time)}` : ""}</b>
+      <span>${esc(g.location || "Pinned spot")}</span><span>${lu.cap ? `${lu.confirmed.length}/${lu.cap} spots` : `${lu.confirmed.length} in`} · hosted by ${esc(firstName(g.createdBy))}</span><em>Open game</em></a>` };
+  });
+  const el = $("#near-map");
+  nearbyMap?.map?.remove?.();
+  mountNearby(el, games, state.nearMe).then((m) => { nearbyMap = m; el.querySelector(".near-loading")?.remove(); })
+    .catch((err) => { el.innerHTML = `<div class="empty small">${esc(err.message)}</div>`; });
+  const locate = (manual) => myLocation().then((p) => {
+    const first = !state.nearMe;
+    state.nearMe = { lat: p.lat, lng: p.lng };
+    if (first && location.hash.startsWith("#/nearby")) rerenderKeepScroll();
+  }).catch((err) => { if (manual) toast(err.message); });
+  $("#near-me")?.addEventListener("click", () => locate(true));
+  if (!state.nearMe) locate(false);
+}
+
 function viewFeed() {
   const idx = ratingIndex();
   const friends = friendIds();
@@ -1072,6 +1194,8 @@ function viewFeed() {
     ${sportChips(state.feedFilter, "feed")}
   </div>
 
+  ${(() => { const n = publicGames().length; return `<a class="alert near-cta" href="#/nearby">${icon("pin")}<span>${n ? `${n} public game${n > 1 ? "s" : ""} coming up. See what's near you.` : "Find public games near you, or host one anyone can join."}</span><b>Nearby</b></a>`; })()}
+
   ${section("Open runs", "Needs a second captain", open)}
   ${section("Upcoming", "", upcoming)}
   ${section("Results", "", results)}
@@ -1099,7 +1223,7 @@ function startEditor(kind, gameId) {
   if (kind === "create") {
     editor = {
       kind, side: "A", selected: null,
-      game: { sport: "soccer", date: localDate(), time: "19:00", location: "", refMode: "none", refName: "", refUser: "" },
+      game: { sport: "soccer", date: localDate(), time: "19:00", location: "", refMode: "none", refName: "", refUser: "", cap: "", isPublic: location.hash.includes("public"), lat: null, lng: null },
       team: newTeam("soccer"),
     };
     return;
@@ -1137,6 +1261,7 @@ function viewEditor() {
         <label>Kick-off<input type="time" id="f-time" value="${esc(game.time)}"></label>
         <label>Where<input id="f-loc" placeholder="Park, cage, gym" value="${esc(game.location)}"></label>
       </div>
+      ${capPublicFields("f", game)}
       <h4>Referee</h4>
       <div class="seg2 full">
         <button type="button" class="${game.refMode === "none" ? "on" : ""}" data-refmode="none">No ref</button>
@@ -1174,7 +1299,7 @@ function viewEditor() {
   <a class="back" href="${editor.gameId ? `#/g/${editor.gameId}` : "#/"}">Back</a>
   <h1 class="page-title">${title}</h1>
   <p class="lead">${kind === "join" ? "You're captain of this side. Pick your players and set the shape." : kind === "create" ? "You captain your side. Someone else claims the other side to lock the game in. Teams don't need to be even." : "You can change your lineup until the final score goes in."}</p>
-  <form id="editor-form" class="stack">
+  <form id="editor-form" class="stack" data-norefresh>
     ${gameFields}
     <section class="panel pad">
       <h3>Your team</h3>
@@ -1195,11 +1320,52 @@ function viewEditor() {
   </form>`;
 }
 
+// Player cap + public toggle + map pin, shared by "Start a game" and "Change date, time or place".
+function capPublicFields(prefix, game) {
+  return `
+    <div class="cap-row">
+      <label>Max players<input type="number" id="${prefix}-cap" min="2" max="100" inputmode="numeric" placeholder="No limit" value="${esc(game.cap || "")}"></label>
+      <p class="muted small">Once it's full, new people join a waitlist and move up if someone drops.</p>
+    </div>
+    <label class="toggle pub-toggle"><input type="checkbox" id="${prefix}-public" ${game.isPublic ? "checked" : ""}> ${icon("globe")} <span><b>Open to the public</b><small>Anyone nearby can find it on the map and RSVP.</small></span></label>
+    <div class="place-pick" id="${prefix}-pp" ${game.isPublic ? "" : "hidden"}>
+      <div class="pp-bar"><input data-pp-q placeholder="Search a park, court or address" aria-label="Search for the spot"><button type="button" class="btn" data-pp-me>${icon("pin")} Use my location</button></div>
+      <div class="pp-results" data-pp-results></div>
+      <div class="pp-map" data-pp-map></div>
+      <p class="muted small" data-pp-note>${game.lat != null ? "Pin set. Drag it to fine-tune." : "Tap the map to drop a pin where you'll play."}</p>
+    </div>`;
+}
+
+// Shows the pin picker when "Open to the public" is on. target gets lat/lng (and a location name if empty).
+let pickerCleanup = null;
+function bindCapPublic(prefix, target, locInput) {
+  const box = $(`#${prefix}-pp`), chk = $(`#${prefix}-public`);
+  if (!box || !chk) return;
+  const mount = () => {
+    if (box.dataset.mounted) return;
+    box.dataset.mounted = "1";
+    pickerCleanup?.();
+    mountPicker(box, target.lat != null ? { lat: target.lat, lng: target.lng } : null, ({ lat, lng, name }) => {
+      target.lat = lat; target.lng = lng;
+      if (name && locInput && !locInput.value.trim()) { locInput.value = name; target.location = name; }
+    }).then((c) => (pickerCleanup = c)).catch((err) => { box.querySelector("[data-pp-note]").textContent = err.message; });
+  };
+  chk.addEventListener("change", () => { target.isPublic = chk.checked; box.hidden = !chk.checked; if (chk.checked) mount(); });
+  if (chk.checked) mount();
+}
+const capValue = (el) => { const n = parseInt(el?.value, 10); return Number.isFinite(n) ? n : null; };
+function checkCapPublic(game) {
+  if (game.cap != null && (game.cap < 2 || game.cap > 100)) throw new Error("Max players has to be between 2 and 100.");
+  if (game.isPublic && game.lat == null) throw new Error("Drop a pin on the map so people nearby can find the game.");
+}
+
 function captureEditor() {
   if (!editor) return;
   const v = (id) => $(id)?.value;
   if ($("#f-tname")) editor.team.name = v("#f-tname");
   if (editor.kind === "create") {
+    if ($("#f-cap")) editor.game.cap = capValue($("#f-cap"));
+    if ($("#f-public")) editor.game.isPublic = $("#f-public").checked;
     if ($("#f-date")) editor.game.date = v("#f-date");
     if ($("#f-time")) editor.game.time = v("#f-time");
     if ($("#f-loc")) editor.game.location = v("#f-loc");
@@ -1217,6 +1383,7 @@ function rerenderEditor() {
 
 function bindEditor() {
   if (!editor) return;
+  if (editor.kind === "create") bindCapPublic("f", editor.game, $("#f-loc"));
   const sport = editor.game.sport;
   $$("[data-sport]").forEach((b) => b.addEventListener("click", () => {
     captureEditor();
@@ -1292,9 +1459,11 @@ function bindEditor() {
           if (!g.refName.trim()) throw new Error("Type the ref's name, or choose No ref.");
           ref = { userId: null, name: g.refName.trim() };
         }
+        checkCapPublic(g);
         const created = await store.createGame({
           sport: g.sport, date: g.date, time: g.time, location: g.location.trim(),
           createdBy: meId(), status: "open", teamA: t, teamB: null, ref, stats: {},
+          cap: g.cap || null, isPublic: !!g.isPublic, lat: g.isPublic ? g.lat : null, lng: g.isPublic ? g.lng : null,
         });
         await store.setRsvp(created.id, meId(), "in");
         gid = created.id;
@@ -1367,20 +1536,30 @@ function viewGame(id) {
   // RSVP: who's coming, before the game
   let rsvpBlock = "";
   if (g.status !== "final") {
-    const list = rsvpsFor(g);
-    const ins = list.filter((r) => r.status === "in");
-    const outs = list.filter((r) => r.status === "out");
+    const lu = lineup(g);
     const my = rsvpOf(g, meId());
+    const pos = lu.waitlist.indexOf(meId());
+    const confirmedMe = lu.confirmed.includes(meId());
+    const full = lu.cap && lu.confirmed.length >= lu.cap;
+    const faces = (ids, n) => ids.map((id, i) => `<a href="#/p/${id}" title="${esc(uname(id))}">${avatar(id)}<small>${n ? `${i + 1}. ` : ""}${esc(firstName(id))}</small></a>`).join("");
     rsvpBlock = `
     <section class="panel pad rsvp">
-      <div class="block-head tight"><h3>Who's in</h3><span class="muted small">${ins.length} in${outs.length ? `, ${outs.length} out` : ""}</span></div>
-      <div class="rsvp-faces">${ins.map((r) => `<a href="#/p/${r.userId}" title="${esc(uname(r.userId))}">${avatar(r.userId)}<small>${esc(firstName(r.userId))}</small></a>`).join("") || `<span class="muted small">Nobody yet. Be the first.</span>`}</div>
+      <div class="block-head tight"><h3>Who's in</h3><span class="muted small">${lu.cap ? `${lu.confirmed.length} of ${lu.cap} spots${full ? ", full" : ""}` : `${lu.confirmed.length} in`}${lu.maybe.length ? `, ${lu.maybe.length} maybe` : ""}${lu.out.length ? `, ${lu.out.length} out` : ""}</span></div>
+      ${lu.cap ? `<div class="spots"><i style="width:${Math.min(100, (lu.confirmed.length / lu.cap) * 100)}%"></i></div>` : ""}
+      <div class="rsvp-faces">${faces(lu.confirmed) || `<span class="muted small">Nobody yet. Be the first.</span>`}</div>
+      ${lu.waitlist.length ? `<h4>Waitlist</h4><div class="rsvp-faces wait">${faces(lu.waitlist, true)}</div>` : ""}
+      ${lu.maybe.length ? `<p class="muted small"><b>Maybe:</b> ${lu.maybe.map((id) => esc(firstName(id))).join(", ")}</p>` : ""}
       ${mySide ? `<p class="muted small">You're on ${esc(teamObj(g, mySide).name)}.</p>` : `
       <div class="rsvp-btns">
-        <button class="btn ${my === "in" ? "primary" : ""}" data-rsvp="in">${icon("check")} ${my === "in" ? "You're in" : "I'm in"}</button>
+        <button class="btn ${my === "in" ? "primary" : ""}" data-rsvp="in">${icon("check")} ${my === "in" ? (pos >= 0 ? `Waitlist #${pos + 1}` : "You're in") : full ? "Join waitlist" : "I'm in"}</button>
+        <button class="btn ${my === "maybe" ? "on-maybe" : "quiet"}" data-rsvp="maybe">${my === "maybe" ? "You're a maybe" : "Maybe"}</button>
         <button class="btn ${my === "out" ? "on-out" : "quiet"}" data-rsvp="out">${my === "out" ? "You're out" : "Can't make it"}</button>
       </div>
-      ${my === "in" ? `<p class="muted small">The captains see you at the top of their player list.</p>` : ""}`}
+      ${pos >= 0 ? `<p class="muted small">The game is full. You're #${pos + 1} in line and move up automatically if someone drops out.</p>` : my === "in" ? `<p class="muted small">The captains see you at the top of their player list.</p>` : ""}`}
+      <div class="rsvp-tools">
+        ${confirmedMe ? `<button type="button" class="btn quiet small" id="add-cal">${icon("calendar")} Add to calendar</button>` : ""}
+        <button type="button" class="btn quiet small" id="share-game">${icon("share")} Share invite</button>
+      </div>
     </section>`;
   }
 
@@ -1506,14 +1685,15 @@ function viewGame(id) {
     ${g.status === "final" ? `<button class="btn share-btn" id="share-card">${icon("share")} Share match card</button>` : ""}
   </section>
   ${myCap ? `
-  <form class="panel pad stack" id="when-form" hidden>
+  <form class="panel pad stack" id="when-form" data-norefresh hidden>
     <h3>When and where</h3>
     <div class="row3">
       <label>Date<input type="date" name="date" value="${esc(g.date)}" required></label>
       <label>Kick-off<input type="time" name="time" value="${esc(g.time || "")}"></label>
       <label>Where<input name="location" placeholder="Park, cage, gym" value="${esc(g.location || "")}"></label>
     </div>
-    <p class="muted small">Everyone in the game sees the new time right away.</p>
+    ${g.createdBy === meId() ? capPublicFields("w", g) : ""}
+    <p class="muted small">Everyone in the game sees the changes right away.</p>
     <div class="inline"><button class="btn primary">Save</button><button type="button" class="btn quiet" id="when-cancel">Cancel</button></div>
   </form>` : ""}
 
@@ -1546,15 +1726,16 @@ function bindGame(id) {
     try { await navigator.clipboard.writeText(url); toast("Invite link copied"); } catch (_) { toast(url); }
   });
   $("#share-card")?.addEventListener("click", (e) => act(e.currentTarget, () => openShareCard(g)));
-  $$("[data-rsvp]").forEach((b) => b.addEventListener("click", () => {
-    const want = b.dataset.rsvp;
-    const cur = rsvpOf(g, meId());
-    act(b, async () => {
-      await store.setRsvp(id, meId(), cur === want ? null : want);
-      await reload();
-      rerenderKeepScroll();
-      toast(cur === want ? "RSVP removed" : want === "in" ? "You're in" : "Marked as out");
-    });
+  $$("[data-rsvp]").forEach((b) => b.addEventListener("click", () => doRsvp(id, b.dataset.rsvp, b)));
+  $("#add-cal")?.addEventListener("click", (e) => act(e.currentTarget, async () => {
+    const how = await addToCalendar(g, `${SPORTS[g.sport]?.label || "Pickup"}: ${g.teamA.name}${g.teamB ? ` vs ${g.teamB.name}` : ""}`);
+    if (how === "ics") toast("Calendar file downloaded. Open it to add the game.");
+  }));
+  $("#share-game")?.addEventListener("click", (e) => act(e.currentTarget, async () => {
+    const lu = lineup(g);
+    const when = `${relDate(g.date)}${g.time ? ` at ${fmtTime(g.time)}` : ""}`;
+    const res = await shareLink(gameUrl(g.id), "Who Cooked", `${SPORTS[g.sport]?.label || "Pickup"} ${when}${g.location ? ` at ${g.location}` : ""}. ${lu.cap ? `${lu.confirmed.length}/${lu.cap} spots taken.` : `${lu.confirmed.length} in so far.`} You in?`);
+    if (res === "copied") toast("Invite link copied");
   }));
 
   const form = $("#rate-form");
@@ -1657,7 +1838,13 @@ function bindGame(id) {
 
   const whenForm = $("#when-form");
   if (whenForm) {
-    const toggle = (show) => { whenForm.hidden = !show; $("#edit-when").hidden = show; if (show) whenForm.scrollIntoView({ block: "nearest", behavior: "smooth" }); };
+    const draft = { isPublic: g.isPublic, lat: g.lat, lng: g.lng };
+    let bound = false;
+    const toggle = (show) => {
+      whenForm.hidden = !show; $("#edit-when").hidden = show;
+      if (show && !bound) { bound = true; bindCapPublic("w", draft, whenForm.location); }
+      if (show) whenForm.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
     $("#edit-when")?.addEventListener("click", () => toggle(true));
     $("#when-cancel").addEventListener("click", () => toggle(false));
     whenForm.addEventListener("submit", (e) => {
@@ -1665,7 +1852,13 @@ function bindGame(id) {
       const f = e.target;
       if (!f.date.value) return toast("Pick a date");
       act($("button.primary", f), async () => {
-        await store.updateGame(id, { date: f.date.value, time: f.time.value, location: f.location.value.trim() });
+        const patch = { date: f.date.value, time: f.time.value, location: f.location.value.trim() };
+        if ($("#w-cap")) {
+          Object.assign(patch, { cap: capValue($("#w-cap")), isPublic: $("#w-public").checked });
+          Object.assign(patch, { lat: patch.isPublic ? draft.lat : null, lng: patch.isPublic ? draft.lng : null });
+          checkCapPublic(patch);
+        }
+        await store.updateGame(id, patch);
         await reload();
         rerenderKeepScroll();
         toast("Game updated");
@@ -2391,6 +2584,7 @@ function render() {
   else if (route === "squad") [html, bind] = [viewSquad(), bindSquad];
   else if (route === "p") [html, bind] = [viewProfile(param), () => bindProfile(param)];
   else if (route === "leaders") [html, bind] = [viewLeaders(), bindLeaders];
+  else if (route === "nearby") [html, bind] = [viewNearby(), bindNearby];
   else if (route === "inbox") [html, bind] = [viewInbox(), bindInbox];
   else [html, bind] = [viewFeed(), bindFeed];
 
@@ -2425,7 +2619,7 @@ window.addEventListener("but:auth", async (e) => {
 // In a shared league, pick up new activity every minute while the app is open.
 let lastUnread = null;
 setInterval(async () => {
-  if (store.mode !== "shared" || !state.me || document.hidden || $("#main textarea:focus, #main input:focus")) return;
+  if (store.mode !== "shared" || !state.me || document.hidden || $("#main textarea:focus, #main input:focus") || $("#main [data-norefresh]:not([hidden])")) return;
   try {
     await reload();
     const unread = buildInbox().filter((i) => i.unread).length;
@@ -2435,7 +2629,15 @@ setInterval(async () => {
   } catch (_) {}
 }, 60000);
 
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-qrsvp]");
+  if (!b) return;
+  e.preventDefault();
+  doRsvp(b.dataset.gid, b.dataset.qrsvp, b);
+});
+
 (async function boot() {
+  reminders.init();
   const brand = $("#brand-icon");
   brand.src = IMG.logo;
   brand.onerror = () => brand.remove();

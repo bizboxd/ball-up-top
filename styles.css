@@ -711,3 +711,74 @@ input[type="date"], input[type="time"] { width: 100%; -webkit-appearance: none; 
 .sb-edit { display: flex; margin: 10px auto 0; gap: 6px; color: #b7c3da; }
 .sb-edit .ic { width: 16px; height: 16px; }
 #when-form[hidden], .sb-edit[hidden] { display: none; }
+
+/* ---------- RSVP: spots, waitlist, maybe ---------- */
+.spots { height: 6px; border-radius: 3px; background: var(--s3); overflow: hidden; margin: 2px 0 14px; }
+.spots i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+.rsvp-faces.wait a { opacity: .7; }
+.rsvp-btns { flex-wrap: wrap; }
+.btn.on-maybe { background: rgba(245, 196, 81, .14); border-color: rgba(245, 196, 81, .5); color: #f5c451; }
+.rsvp-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.rsvp-tools .ic { width: 16px; height: 16px; }
+
+/* Feed card RSVP strip */
+.tk-wrap + .tk, .tk + .tk-wrap, .tk-wrap + .tk-wrap, .near-row + .near-row { border-top: 1px solid var(--line); }
+.near-row .tk-wrap, .near-row > .tk { border-top: 0; }
+.tk-rsvp { display: flex; align-items: center; gap: 6px; padding: 0 18px 14px; margin-top: -4px; flex-wrap: wrap; }
+.qr-status { font-size: 12.5px; font-weight: 600; margin-right: auto; color: var(--text); }
+.qr-status.in { color: #4ade80; } .qr-status.maybe { color: #f5c451; } .qr-status.out { color: var(--muted); }
+.qr { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line2); background: var(--s2); color: var(--muted); font: 600 12.5px var(--body); cursor: pointer; }
+.qr.on.in { background: var(--blue); border-color: var(--blue); color: #fff; }
+.qr.on.maybe { border-color: rgba(245, 196, 81, .6); color: #f5c451; }
+.qr.on.out { border-color: var(--line2); color: var(--text); background: var(--s3); }
+.qr:disabled { opacity: .5; }
+.tk-pub { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ice); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-pub .ic { width: 13px; height: 13px; flex: none; }
+
+/* Cap + public + pin picker */
+.cap-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 14px; align-items: end; margin-top: 16px; }
+.cap-row p { margin: 0 0 10px; }
+@media (max-width: 480px) { .cap-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+.pub-toggle { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line2); border-radius: 10px; background: var(--s2); cursor: pointer; }
+.pub-toggle input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--blue); flex: none; }
+.pub-toggle .ic { width: 20px; height: 20px; color: var(--ice); flex: none; margin-top: 1px; }
+.pub-toggle span { display: grid; gap: 2px; }
+.pub-toggle small { color: var(--muted); font-weight: 400; }
+.place-pick { margin-top: 12px; }
+.place-pick[hidden] { display: none; }
+.pp-bar { display: flex; gap: 8px; }
+.pp-bar input { flex: 1; min-width: 0; }
+.pp-bar .btn { flex: none; white-space: nowrap; }
+.pp-bar .ic { width: 16px; height: 16px; }
+@media (max-width: 480px) { .pp-bar { flex-direction: column; } }
+.pp-results { display: grid; gap: 4px; margin-top: 6px; }
+.pp-results:empty { display: none; }
+.pp-results button { display: grid; text-align: left; gap: 1px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line2); background: var(--s2); color: var(--text); font: 14px var(--body); cursor: pointer; }
+.pp-results small { color: var(--muted); }
+.pp-map, .near-map { height: 280px; margin-top: 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line2); background: #0b0f17; position: relative; z-index: 0; }
+.near-map { height: min(52vh, 440px); margin-top: 14px; }
+.near-loading { padding: 16px; }
+.near-dist { display: flex; align-items: center; gap: 4px; padding: 12px 18px 0; font-size: 12px; font-weight: 600; color: var(--ice); }
+.near-dist .ic { width: 13px; height: 13px; }
+.near-row .tk { padding-top: 8px; }
+.near-cta { margin: 0 0 18px; }
+.near-cta .ic { color: var(--ice); }
+.near-link + .bell { margin-left: 0; }
+@media (max-width: 760px) { .near-link { margin-left: auto; } .near-link + .bell { margin-left: 0; } }
+.link-btn { color: var(--ice); }
+
+/* Leaflet theming */
+.wc-pin span { position: absolute; left: 3px; top: 0; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--blue); border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.wc-pin.basketball span { background: #ff7a1a; } .wc-pin.volleyball span { background: #f5c451; }
+.leaflet-container { font: 13px var(--body); background: #0b0f17; }
+.leaflet-container a { color: var(--ice); }
+.leaflet-control-attribution { background: rgba(0,0,0,.6) !important; color: #8a94a8 !important; font-size: 10px; }
+.leaflet-bar a { background: #121826; color: #e6ecf7; border-color: #263046; }
+.wc-popup .leaflet-popup-content-wrapper, .wc-popup .leaflet-popup-tip { background: #121826; color: #e6ecf7; border: 1px solid #263046; }
+.wc-popup .pop { display: grid; gap: 3px; color: #e6ecf7 !important; text-decoration: none; }
+.wc-popup .pop span { color: #9aa6bd; font-size: 12.5px; }
+.wc-popup .pop em { font-style: normal; color: var(--ice); font-weight: 600; margin-top: 4px; }
+.seg2.full { display: flex; width: 100%; max-width: 100%; }
+.seg2.full button { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; }
+.stack > *, form > .panel { min-width: 0; }
+.near-host { margin: 0 0 16px; display: inline-flex; gap: 6px; } .near-host .ic { width: 18px; height: 18px; }

@@ -13,7 +13,7 @@ import { isReservedUsername } from "./reserved.js";
 //            ref:{ userId:string|null, name:string }|null, stats:{ playerId:{...} } }
 //   rating { id, gameId, raterId, target: playerId | "ref", score, note }
 //   friendship { id, from, to, status:"pending"|"accepted", createdAt }
-//   rsvp   { gameId, userId, status:"in"|"out", createdAt }
+//   rsvp   { gameId, userId, status:"in"|"maybe"|"out", createdAt }  (createdAt = when they last changed it; sets waitlist order)
 //   comment{ id, gameId, userId, body, parentId (comment it replies to, or null), createdAt }
 //   playerStats { gameId, userId, stats:{...}, updatedAt }  each player enters only their own
 //   game also carries finalAt (whistle time, starts the 24h voting window) and claimedAt.
@@ -374,6 +374,7 @@ class SupabaseStore {
       createdBy: r.created_by, createdAt: r.created_at, status: r.status,
       teamA: r.team_a, teamB: r.team_b, ref: r.ref, stats: r.stats || {},
       finalAt: r.final_at, claimedAt: r.claimed_at,
+      cap: r.cap ?? null, isPublic: !!r.is_public, lat: r.lat ?? null, lng: r.lng ?? null,
     };
   }
 
@@ -461,6 +462,10 @@ class SupabaseStore {
     if ("ref" in g) out.ref = g.ref;
     if ("stats" in g) out.stats = g.stats;
     if ("finalAt" in g) out.final_at = g.finalAt;
+    if ("cap" in g) out.cap = g.cap || null;
+    if ("isPublic" in g) out.is_public = !!g.isPublic;
+    if ("lat" in g) out.lat = g.lat ?? null;
+    if ("lng" in g) out.lng = g.lng ?? null;
     if ("claimedAt" in g) out.claimed_at = g.claimedAt;
     return out;
   }
@@ -496,7 +501,7 @@ SupabaseStore.prototype.listRsvps = async function () {
 };
 SupabaseStore.prototype.setRsvp = async function (gameId, userId, status) {
   const q = status
-    ? this.sb.from("rsvps").upsert({ game_id: gameId, user_id: userId, status }, { onConflict: "game_id,user_id" })
+    ? this.sb.from("rsvps").upsert({ game_id: gameId, user_id: userId, status, created_at: new Date().toISOString() }, { onConflict: "game_id,user_id" })
     : this.sb.from("rsvps").delete().eq("game_id", gameId).eq("user_id", userId);
   const { error } = await q;
   if (error) throw new Error(error.message);
