@@ -1161,7 +1161,7 @@ function viewFeed() {
       ${avatar(meId(), "xl")}
       <div>
         <h1>${esc(state.me.displayName)}</h1>
-        ${meta(`${sum.games.length} games`, `${sum.wins}-${sum.losses}${sum.draws ? "-" + sum.draws : ""}`, `${sum.motms} MOTM`)}
+        ${meta(`${sum.games.length} games`, `${sum.wins}-${sum.draws || 0}-${sum.losses} W-D-L`, `${sum.motms} MOTM`)}
       </div>
     </a>
     <div class="me-nums">
@@ -2254,7 +2254,7 @@ function viewProfile(id) {
       ${!mine && isBlocked(id) ? `<p class="muted small mt">You blocked ${esc(firstName(id))}. You won't see their comments.</p>` : ""}
       <div class="ph-stats">
         <div><b>${s.games.length}</b><small>Games</small></div>
-        <div><b>${s.wins}-${s.losses}${s.draws ? "-" + s.draws : ""}</b><small>Record</small></div>
+        <div><b>${s.wins}-${s.draws || 0}-${s.losses}</b><small>W-D-L</small></div>
         <div><b>${s.motms}</b><small>MOTM</small></div>
         <div><b>${theirFriends.length}</b><small>Friends</small></div>
         ${s.reffed ? `<div><b>${fmt(s.refAvg)}</b><small>As ref (${s.reffed})</small></div>` : ""}
@@ -2463,12 +2463,12 @@ function viewLeaders() {
     </a>`).join("")}</div>` : ""}
   <section class="panel flush">
     <div class="table-wrap"><table class="leaders">
-      <thead><tr><th>#</th><th>Player</th><th>GP</th><th>W-L</th><th>MOTM</th>${cfg ? `<th>${cfg.keyLabel}</th>` : ""}<th>Rating</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>GP</th><th>W-D-L</th><th>MOTM</th>${cfg ? `<th>${cfg.keyLabel}</th>` : ""}<th>Rating</th></tr></thead>
       <tbody>${ranked.map((r, i) => `
         <tr data-href="#/p/${r.u.id}" class="${r.u.id === meId() ? "me" : ""}">
           <td class="rank r${i + 1}">${i + 1}</td>
           <td><span class="pcell">${avatar(r.u.id, "sm")}${esc(r.u.displayName)}</span></td>
-          <td>${r.s.games.length}</td><td>${r.s.wins}-${r.s.losses}</td><td>${r.s.motms}</td>
+          <td>${r.s.games.length}</td><td>${r.s.wins}-${r.s.draws || 0}-${r.s.losses}</td><td>${r.s.motms}</td>
           ${cfg ? `<td>${fmt(r.key)}</td>` : ""}
           <td>${badge(r.s.avg)}</td>
         </tr>`).join("")}
@@ -2476,9 +2476,9 @@ function viewLeaders() {
         <tr data-href="#/p/${r.u.id}" class="unrated ${r.u.id === meId() ? "me" : ""}">
           <td class="rank">–</td>
           <td><span class="pcell">${avatar(r.u.id, "sm")}${esc(r.u.displayName)}</span></td>
-          <td>${r.s.games.length}</td><td>${r.s.wins}-${r.s.losses}</td><td>${r.s.motms}</td>
+          <td>${r.s.games.length}</td><td>${r.s.wins}-${r.s.draws || 0}-${r.s.losses}</td><td>${r.s.motms}</td>
           ${cfg ? `<td>${fmt(r.key)}</td>` : ""}
-          <td><span class="muted small">Not rated yet</span></td>
+          <td><span class="muted small">N/A</span></td>
         </tr>`).join("")}
         ${!all.length ? `<tr><td colspan="7" class="muted center pad">No finished games ${season === "all" ? "" : "this season "}${cfg ? `in ${cfg.label.toLowerCase()} ` : ""}yet.</td></tr>` : ""}</tbody>
     </table></div>

@@ -783,3 +783,15 @@ input[type="date"], input[type="time"] { width: 100%; -webkit-appearance: none; 
 .stack > *, form > .panel { min-width: 0; }
 .near-host { margin: 0 0 16px; display: inline-flex; gap: 6px; } .near-host .ic { width: 18px; height: 18px; }
 .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
+/* Leaders table fits a phone without sideways scrolling */
+@media (max-width: 520px) {
+  table.leaders th, table.leaders td { padding: 9px 5px; }
+  table.leaders th:first-child, table.leaders td:first-child { padding-left: 10px; }
+  table.leaders th:last-child, table.leaders td:last-child { padding-right: 10px; text-align: right; }
+  table.leaders .pcell { gap: 7px; max-width: 34vw; }
+  table.leaders .pcell .avatar { width: 28px; height: 28px; flex: none; }
+  table.leaders td .pcell { overflow: hidden; text-overflow: ellipsis; }
+  table.leaders th { font-size: 11px; letter-spacing: .02em; }
+}
+@media (max-width: 520px) { table.leaders td .pcell .avatar { display: none; } table.leaders .pcell { max-width: 30vw; } }
+@media (max-width: 400px) { table.leaders th, table.leaders td { padding-left: 3px; padding-right: 3px; } table.leaders td { font-size: 14px; } }
