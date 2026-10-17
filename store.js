@@ -282,7 +282,8 @@ class SupabaseStore {
     this.key = key;
   }
   async init() {
-    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
+    // The iPhone app bundles the library (window.supabase); the website loads it from the CDN.
+    const createClient = window.supabase?.createClient || (await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm")).createClient;
     this.native = !!window.Capacitor?.isNativePlatform?.();
     this.sb = createClient(this.url, this.key, { auth: { flowType: "pkce", detectSessionInUrl: !this.native, persistSession: true } });
     // A password-reset link lands here with ?reset=1 (plus ?code=...); remember it so the app asks for a new password.
@@ -293,7 +294,7 @@ class SupabaseStore {
     const { data: sess } = await this.sb.auth.getSession();
     if (qs.has("reset") && sess?.session) this.recovery = true;
     if (qs.has("code") || qs.has("reset")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
-    if (this.native) {
+    if (this.native) try {
       // In the iPhone app, OAuth runs in the system browser and comes back through the app's URL scheme.
       const App = window.Capacitor.registerPlugin("App");
       App.addListener("appUrlOpen", async ({ url }) => {
@@ -305,6 +306,8 @@ class SupabaseStore {
           window.dispatchEvent(new CustomEvent("but:auth", { detail: { error: error?.message } }));
         }
       });
+    } catch (err) {
+      console.warn("Deep-link listener unavailable", err);
     }
   }
   get supportsSocialLogin() { return true; }
