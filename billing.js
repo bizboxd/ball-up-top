@@ -1,3 +1,4 @@
+import { capPlugin } from "./native.js";
 // Subscriptions through RevenueCat.
 //   iPhone app: Apple in-app purchase (RevenueCat Capacitor plugin, talked to through the native bridge)
 //   Website:    Stripe checkout (RevenueCat Web Billing JS SDK)
@@ -35,7 +36,7 @@ class Billing {
     if (!this.enabled || this.userId === userId) return;
     this.userId = userId;
     if (this.native) {
-      this.P = window.Capacitor.registerPlugin("Purchases");
+      this.P = capPlugin("Purchases");
       if (!this.ready) await this.P.configure({ apiKey: this.key, appUserID: userId });
       else await this.P.logIn({ appUserID: userId });
     } else {

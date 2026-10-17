@@ -1,3 +1,4 @@
+import { capPlugin } from "./native.js";
 // Light ads for free players. Pro removes them.
 //
 // Rules: only on the Feed and the Leaderboard, never full-screen, never on the rating,
@@ -61,7 +62,7 @@ class Ads {
   async #banner(want) {
     if (want === this.bannerUp) return;
     if (!this.P) {
-      this.P = window.Capacitor.registerPlugin("AdMob");
+      this.P = capPlugin("AdMob");
       await this.P.initialize({});
     }
     if (want) {

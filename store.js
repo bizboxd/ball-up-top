@@ -1,3 +1,4 @@
+import { capPlugin } from "./native.js";
 import { isReservedUsername } from "./reserved.js";
 // Data layer with two interchangeable backends sharing one async API:
 //   - LocalStore    : demo mode, everything in this browser's localStorage
@@ -296,11 +297,11 @@ class SupabaseStore {
     if (qs.has("code") || qs.has("reset")) history.replaceState(null, "", location.pathname + (location.hash || "#/"));
     if (this.native) try {
       // In the iPhone app, OAuth runs in the system browser and comes back through the app's URL scheme.
-      const App = window.Capacitor.registerPlugin("App");
+      const App = capPlugin("App");
       App.addListener("appUrlOpen", async ({ url }) => {
         if (!url?.startsWith(NATIVE_REDIRECT)) return;
         const code = new URL(url.replace(/#/, "?")).searchParams.get("code");
-        try { window.Capacitor.registerPlugin("Browser").close(); } catch (_) {}
+        try { capPlugin("Browser").close(); } catch (_) {}
         if (code) {
           const { error } = await this.sb.auth.exchangeCodeForSession(code);
           window.dispatchEvent(new CustomEvent("but:auth", { detail: { error: error?.message } }));
@@ -315,7 +316,7 @@ class SupabaseStore {
     if (this.native) {
       const { data, error } = await this.sb.auth.signInWithOAuth({ provider, options: { redirectTo: NATIVE_REDIRECT, skipBrowserRedirect: true } });
       if (error) throw new Error(error.message);
-      await window.Capacitor.registerPlugin("Browser").open({ url: data.url, presentationStyle: "popover" });
+      await capPlugin("Browser").open({ url: data.url, presentationStyle: "popover" });
       return;
     }
     this.#ok(await this.sb.auth.signInWithOAuth({ provider, options: { redirectTo: location.origin + location.pathname } }));
@@ -326,7 +327,7 @@ class SupabaseStore {
       // Native Sign in with Apple sheet, then hand the identity token to Supabase.
       const raw = crypto.randomUUID() + crypto.randomUUID();
       const hashed = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-      const Apple = window.Capacitor.registerPlugin("SignInWithApple");
+      const Apple = capPlugin("SignInWithApple");
       const res = await Apple.authorize({ clientId: APP_BUNDLE_ID, redirectURI: this.url + "/auth/v1/callback", scopes: "email name", nonce: hashed });
       const token = res?.response?.identityToken;
       if (!token) throw new Error("Apple didn't return a sign-in token. Try again.");
