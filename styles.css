@@ -782,3 +782,4 @@ input[type="date"], input[type="time"] { width: 100%; -webkit-appearance: none; 
 .seg2.full button { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; }
 .stack > *, form > .panel { min-width: 0; }
 .near-host { margin: 0 0 16px; display: inline-flex; gap: 6px; } .near-host .ic { width: 18px; height: 18px; }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }

@@ -15,9 +15,10 @@ export function loadLeaflet() {
   }));
 }
 
-const tiles = (L) => L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-  subdomains: "abcd", maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+// OpenStreetMap tiles, darkened in CSS (.leaflet-tile-pane) to match the app.
+const tiles = (L) => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 });
 
 const pinIcon = (L, cls = "") => L.divIcon({ className: `wc-pin ${cls}`, html: "<span></span>", iconSize: [28, 36], iconAnchor: [14, 34], popupAnchor: [0, -30] });
