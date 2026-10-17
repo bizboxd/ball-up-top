@@ -132,6 +132,8 @@ class LocalStore {
     try { localStorage.setItem(SESSION_KEY, u.id); } catch (_) {}
     return publicUser(u);
   }
+  // Who's signed in on this device, without a network call (used to open instantly from the last snapshot).
+  async sessionUserId() { try { return localStorage.getItem(SESSION_KEY); } catch (_) { return null; } }
   async signOut() {
     try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
   }
@@ -416,6 +418,7 @@ class SupabaseStore {
     return this.currentUser();
   }
   async signOut() { this.recovery = false; await this.sb.auth.signOut(); }
+  async sessionUserId() { try { return (await this.sb.auth.getSession()).data.session?.user?.id || null; } catch (_) { return null; } }
   async sendPasswordReset(email) {
     email = (email || "").trim();
     if (!email) throw new Error("Enter the email you signed up with.");

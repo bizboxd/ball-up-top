@@ -88,6 +88,7 @@ async function reload() {
   const me = await store.currentUser();
   if (!me) {
     Object.assign(state, { me, users: [], games: [], ratings: [], friendships: [], rsvps: [], comments: [], playerStats: [], blocks: [] });
+    saveSnapshot(null);
     return;
   }
   if (billing.enabled && !me.needsSetup) {
@@ -103,7 +104,32 @@ async function reload() {
     if (g) g.stats = { ...(g.stats || {}), [r.userId]: r.stats };
   }
   Object.assign(state, { me, users, games, ratings, friendships, rsvps, comments, playerStats, blocks });
+  saveSnapshot(state);
   syncReminders();
+}
+
+// The last league data this device saw, so the app opens straight to the feed and refreshes in the background.
+const SNAP_KEY = "wc.snapshot.v1";
+const SNAP_FIELDS = ["me", "users", "games", "ratings", "friendships", "rsvps", "comments", "playerStats", "blocks"];
+function saveSnapshot(st) {
+  try {
+    if (!st || !st.me || st.me.needsSetup) { localStorage.removeItem(SNAP_KEY); return; }
+    const snap = { at: Date.now(), mode: store.mode };
+    for (const k of SNAP_FIELDS) snap[k] = st[k];
+    localStorage.setItem(SNAP_KEY, JSON.stringify(snap));
+  } catch (_) { /* storage full or blocked: just skip the snapshot */ }
+}
+async function loadSnapshot() {
+  try {
+    const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
+    if (!snap?.me || snap.mode !== store.mode) return false;
+    if (Date.now() - snap.at > 14 * 864e5) return false; // two weeks old: start fresh
+    const uid = await store.sessionUserId();
+    if (!uid || uid !== snap.me.id) return false;
+    for (const k of SNAP_FIELDS) state[k] = snap[k] ?? (k === "me" ? null : []);
+    revealCache = new Map();
+    return true;
+  } catch (_) { return false; }
 }
 
 // iPhone: a local reminder 2 hours before every upcoming game you're confirmed for.
@@ -2644,6 +2670,16 @@ document.addEventListener("click", (e) => {
     $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
   try {
     await store.init();
+    // Open instantly with what this device saw last time, then refresh quietly.
+    if (!location.hash.startsWith("#/plans") && !store.recovery && await loadSnapshot()) {
+      render();
+      reload().then(() => {
+        if ($("#main textarea:focus, #main input:focus") || $("#main [data-norefresh]:not([hidden])")) return;
+        if (!state.me) return render();
+        rerenderKeepScroll();
+      }).catch((err) => console.warn("Background refresh failed", err));
+      return;
+    }
     await reload();
   } catch (err) {
     $("#main").innerHTML = `<div class="empty">Couldn't connect to the league database. Check the keys in config.js.<br><small class="muted">${esc(err.message)}</small></div>`;

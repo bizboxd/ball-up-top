@@ -795,3 +795,6 @@ input[type="date"], input[type="time"] { width: 100%; -webkit-appearance: none; 
 }
 @media (max-width: 520px) { table.leaders td .pcell .avatar { display: none; } table.leaders .pcell { max-width: 30vw; } }
 @media (max-width: 400px) { table.leaders th, table.leaders td { padding-left: 3px; padding-right: 3px; } table.leaders td { font-size: 14px; } }
+.loading { display: grid; place-items: center; min-height: 60vh; padding: 0; }
+.loading-logo { width: min(220px, 60vw); height: auto; animation: wc-pulse 1.4s ease-in-out infinite; }
+@keyframes wc-pulse { 0%, 100% { opacity: .55; transform: scale(.98); } 50% { opacity: 1; transform: scale(1); } }
