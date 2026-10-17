@@ -1,0 +1,1 @@
+pickup,soccer,basketball,volleyball,rating,ratings,teammates,stats,footy,hoops,motm,league,squad,run

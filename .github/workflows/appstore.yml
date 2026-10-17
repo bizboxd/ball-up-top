@@ -1,0 +1,51 @@
+# Uploads the App Store listing (text + screenshots in fastlane/) to App Store Connect with fastlane deliver.
+# Does not upload a build and does not submit for review. Uses the same App Store Connect API key secrets as ios.yml.
+name: App Store listing
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "fastlane/**"
+      - ".github/workflows/appstore.yml"
+
+concurrency:
+  group: appstore-listing
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+          P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          json.dump({"key_id": os.environ["KEY_ID"], "issuer_id": os.environ["ISSUER"], "key": os.environ["P8"], "in_house": False},
+                    open(os.path.join(os.environ["RUNNER_TEMP"], "asc_key.json"), "w"))
+          PY
+
+      - name: Upload listing and screenshots
+        run: |
+          fastlane run deliver \
+            api_key_path:"$RUNNER_TEMP/asc_key.json" \
+            app_identifier:"com.bizboxd.balluptop" \
+            app_version:"1.0" \
+            platform:"ios" \
+            metadata_path:"./fastlane/metadata" \
+            screenshots_path:"./fastlane/screenshots" \
+            skip_binary_upload:true \
+            skip_app_version_update:true \
+            overwrite_screenshots:true \
+            force:true \
+            submit_for_review:false \
+            run_precheck_before_submit:false \
+            precheck_include_in_app_purchases:false

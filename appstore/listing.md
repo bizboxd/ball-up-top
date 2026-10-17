@@ -10,7 +10,7 @@ Pickup soccer, hoops and volleyball, rated by the people who were there. Log the
 ## Description
 Every pickup run has someone who cooked. Now you can prove it.
 
-Who Cooked is Sofascore for pickup games. Log your soccer, basketball and volleyball runs, set your formation, and rate your teammates out of 10 after the final whistle.
+Who Cooked gives your pickup games player ratings like the pros get. Log your soccer, basketball and volleyball runs, set your formation, and rate your teammates out of 10 after the final whistle.
 
 HOW IT WORKS
 • Start a game and invite your squad. Uneven teams? 7v8 is fine.
@@ -35,7 +35,7 @@ FAIR BY DESIGN
 Who Cooked is free. Find your squad and find out who cooked.
 
 ## Keywords (100 max, comma separated, no spaces)
-pickup,soccer,basketball,volleyball,rating,ratings,teammates,stats,sofascore,motm,league,squad,run
+pickup,soccer,basketball,volleyball,rating,ratings,teammates,stats,footy,hoops,motm,league,squad,run
 
 ## URLs
 - Support URL: https://whocooked.gg/support.html (contact: info.sportsboxd@gmail.com)
